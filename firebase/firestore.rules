@@ -1,17 +1,52 @@
 rules_version = '2';
 
-// F0 PLACEHOLDER — deny everything.
+// F3 — brand + tier enforcement at the database.
 //
-// The real tiered security rules (per-brand isolation, per-tier access for
-// contracts_operational / contracts_economic, audit collection writable only by
-// Functions) are F3, not now. This file exists only because the Firestore emulator
-// requires a rules file to boot.
-//
-// Deny-all here does NOT block later phases: F1/F2 seed data via the Admin SDK, which
-// bypasses security rules. So nothing reads through these rules until F3 replaces them.
+// Every read of the tiered collections hits these rules, inside Firestore, before any
+// data is returned: the agent, the Functions, or a raw client with the URL all face
+// the same gate. This mirrors Day 1's decide(): a BRAND gate (tenancy) and a TIER gate
+// (access control), both read from the caller's signed token claims. Default deny; no
+// client writes (seed/migration use the Admin SDK, which bypasses rules).
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // A usable identity must be authenticated AND carry string brand/role claims.
+    // A token with no brand/role (F1's no-default-claims) fails here and is denied.
+    function hasClaims() {
+      return request.auth != null
+        && request.auth.token.brand is string
+        && request.auth.token.role is string;
+    }
+
+    // BRAND gate: the token's brand claim must equal the brand in the document path.
+    function brandMatches(brand) {
+      return request.auth.token.brand == brand;
+    }
+
+    // TIER gate: the token's role must be in the allowlist for that tier. An unknown or
+    // garbage role is not in any allowlist, so it is denied — fail-closed on role.
+    function roleIn(roles) {
+      return request.auth.token.role in roles;
+    }
+
+    // Operational tier: public + operational data. All three roles, own brand only.
+    match /accounts_operational/{brand} {
+      allow read: if hasClaims()
+                  && brandMatches(brand)
+                  && roleIn(['sales', 'legal', 'power_user']);
+      allow write: if false; // no client writes; Admin SDK bypasses rules
+    }
+
+    // Economic tier: economic contract terms. legal + power_user only, own brand only.
+    match /accounts_economic/{brand} {
+      allow read: if hasClaims()
+                  && brandMatches(brand)
+                  && roleIn(['legal', 'power_user']);
+      allow write: if false;
+    }
+
+    // Explicit default-deny for everything else.
     match /{document=**} {
       allow read, write: if false;
     }

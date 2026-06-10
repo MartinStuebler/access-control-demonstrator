@@ -141,6 +141,53 @@ are emulator-only by construction.
 > credentials it doesn't need against the emulator. All operations succeed; it can be
 > ignored.
 
+## Security rules (F3)
+
+`firestore.rules` enforces the brand and tier boundary **inside the database**, on
+every read, before any data is returned — the agent, the Functions, or a raw client
+with the URL all face the same gate. This is the Day 1 `decide()` logic moved below the
+application.
+
+In plain language:
+
+- **Brand gate (tenancy):** the token's `brand` claim must equal the brand in the
+  document path (`accounts_*/{brand}`). Any other brand is denied — the database-level
+  cross-brand block.
+- **Tier gate (access control):** `accounts_operational` allows `sales`, `legal`,
+  `power_user`; `accounts_economic` allows only `legal`, `power_user`. Sales reading
+  economic is denied.
+- **Fail-closed:** a token with no `brand`/`role` claim, or an unknown/garbage role, is
+  denied at both tiers (the role allowlist admits nothing else). Unauthenticated reads
+  are denied.
+- **No client writes:** every write is `if false`; data is written only by the
+  seed/migration Admin SDK, which bypasses rules. Default-deny everywhere else.
+
+### Run the assertion suite
+
+With the emulator running:
+
+```bash
+cd firebase
+npm run rules:test
+```
+
+Uses `@firebase/rules-unit-testing` against the real `firestore.rules`. It is
+self-contained (seeds its own docs with rules disabled, so it does not need the F2
+migration to have run) and asserts **every** combination — exhaustively:
+
+| Category | Cases |
+|---|---|
+| Authenticated reads: every (role × brand) principal × (tier × target brand) | 54 |
+| Unauthenticated reads denied | 6 |
+| No-claims token denied (F1 tie-in) | 6 |
+| Unknown/garbage role denied at both tiers (fail-closed) | 6 |
+| Client writes denied | 6 |
+| **Total** | **78 rules assertions, all passing** |
+
+15 allows, 63 denies — the denials are the proof. The suite prints the full matrix and
+exits non-zero on any miss. (Six expected `PERMISSION_DENIED` lines are logged by the
+Firestore client during the asserted write-denials — they are expected, not failures.)
+
 ## Files
 
 | File | Purpose |
