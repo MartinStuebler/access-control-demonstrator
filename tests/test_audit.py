@@ -74,6 +74,8 @@ def test_cross_brand_request_is_logged_as_block(store, tmp_path):
     (event,) = read_events(log.path)
     assert event["event"] == "cross_brand_block"
     assert event["requested_brand"] == "brand_a"
+    # The trail must read "operator probed, policy refused" — not "agent tried".
+    assert event["initiated_by"] == "operator_probe"
     assert d.code == policy.CROSS_BRAND_BLOCK
 
 

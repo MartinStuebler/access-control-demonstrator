@@ -64,18 +64,24 @@ class AuditLog:
 
     # --- enforcement events ------------------------------------------------
 
-    def cross_brand_block(self, requested_brand: str, reason: str) -> None:
-        self._write("cross_brand_block", requested_brand=requested_brand, reason=reason)
+    def cross_brand_block(self, requested_brand: str, reason: str,
+                          initiated_by: str = "operator_probe") -> None:
+        # initiated_by makes the trail honest about WHO triggered the block. The agent
+        # cannot reach this path (it has no brand parameter), so a block is always an
+        # operator/eval probe — "operator probed, policy refused," never "agent tried."
+        self._write("cross_brand_block", requested_brand=requested_brand,
+                    reason=reason, initiated_by=initiated_by)
 
     def refusal(self, reason: str) -> None:
         self._write("refusal", reason=reason)
 
-    def log_decision(self, requested_brand: str, decision: Decision) -> None:
+    def log_decision(self, requested_brand: str, decision: Decision,
+                     initiated_by: str = "operator_probe") -> None:
         """Log a raw policy decision. Used by the operator cross-brand probe to put a
         real cross_brand_block line in the trail — the agent itself cannot trigger one
         because it has no way to name another brand."""
         if decision.code == CROSS_BRAND_BLOCK:
-            self.cross_brand_block(requested_brand, decision.reason)
+            self.cross_brand_block(requested_brand, decision.reason, initiated_by=initiated_by)
         else:
             self._write("decision", requested_brand=requested_brand,
-                        code=decision.code, reason=decision.reason)
+                        code=decision.code, reason=decision.reason, initiated_by=initiated_by)

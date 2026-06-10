@@ -40,16 +40,20 @@ approval. Never claim something was shared."""
 
 class Agent:
     def __init__(self, principal: Principal, tools: GovernedTools,
-                 model: str = MODEL, effort: str = "medium", audit=None) -> None:
+                 model: str = MODEL, effort: str = "medium", audit=None,
+                 brand_name: str | None = None) -> None:
         self.principal = principal
         self.tools = tools
         self.audit = audit  # optional AuditLog; run boundaries logged when present
         self.client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
         self.model = model
         self.effort = effort
-        acct = tools.store.get_account(principal.brand)
+        # The Agent NEVER reads the store directly — its only path to account data is
+        # tools.dispatch(), the logged choke point. The brand's display label is
+        # binding metadata supplied by the trusted launcher (CLI), like brand/role,
+        # so there is no unlogged read here.
         self.system = SYSTEM_PROMPT.format(
-            brand_name=acct.get("brand_name", principal.brand), role=principal.role)
+            brand_name=brand_name or principal.brand, role=principal.role)
 
     def run(self, user_query: str, max_turns: int = 8) -> str:
         if self.audit is not None:

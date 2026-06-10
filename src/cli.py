@@ -41,9 +41,12 @@ def main(argv: list[str] | None = None) -> int:
 
     principal = Principal(brand=args.brand, role=args.role)
     audit = AuditLog(principal)
+    # The trusted launcher resolves the brand's display label as binding metadata and
+    # hands it to the Agent, so the Agent itself never reads the store.
+    brand_name = store.get_account(args.brand).get("brand_name", args.brand)
     from .tools import GovernedTools
     agent = Agent(principal, GovernedTools(store, principal, audit=audit),
-                  effort=args.effort, audit=audit)
+                  effort=args.effort, audit=audit, brand_name=brand_name)
 
     print(f"[run {audit.run_id} bound to brand={principal.brand} role={principal.role}]",
           file=sys.stderr)
