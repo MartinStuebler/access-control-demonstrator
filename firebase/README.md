@@ -188,12 +188,91 @@ migration to have run) and asserts **every** combination — exhaustively:
 exits non-zero on any miss. (Six expected `PERMISSION_DENIED` lines are logged by the
 Firestore client during the asserted write-denials — they are expected, not failures.)
 
+## Cloud Functions as the tool surface (F4)
+
+The agent's three read tools become **HTTPS callable Cloud Functions** (`functions/index.js`)
+on the Functions emulator. This is the **application layer** of the two-layer defense; the
+F3 rules sit underneath it. The agent holds **no Firestore client** — the Functions are its
+only path to data.
+
+Each function does the same three things:
+
+1. **Verifies the signed ID token** (`onCall` verifies it; we then assert the claims are
+   present and the role is known — fail-closed).
+2. **Builds the Principal from the verified token claims only** — `brand`/`role` come from
+   `request.auth.token`, **never** from `request.data`. A client that smuggles a different
+   `brand` in the call body is ignored; identity is what Google signed.
+3. **Reads only the tiers that token entitles** (via the Admin SDK): operational always;
+   economic only for `legal`/`power_user`.
+
+| Function | sales | legal / power_user |
+|---|---|---|
+| `get_account_overview` | operational sections (profile, orders, issues, last contact) | same |
+| `get_contract_terms` | operational fields served; **economic withheld (named)** | operational **+** economic served |
+| `search_account_notes` | notes (operational tier), substring match | same |
+
+`draft_briefing` and `share_briefing` are **not** Functions. `draft_briefing` composes the
+brief client-side from the *served* output of the two read Functions — it only ever touches
+already-filtered data (the Day 1 guarantee), and the brief is rendered by the **same**
+formatter both backends call (`src/tools.py: compose_briefing`), so it is byte-identical to
+local mode. `share_briefing` stays the non-sending `pending_human_approval` stub.
+
+**Naming withheld fields without reading the economic tier.** Sales must name the withheld
+economic fields but must not read the economic doc. So the migration writes the economic
+field **names** (not values) into the operational doc as `contract_field_index` (source
+order, each tagged with its tier). Sales reads only the operational doc, serves operational
+fields, and names the economic ones as withheld — their **values never leave the economic
+tier**. (Audit-to-Firestore is **F5**; F4 runs without the local audit sink.)
+
+### The two layers, both refusing
+
+- **Layer 2 (Functions):** the function derives `brand` from the token, so a `brand_b`
+  caller can never reach `brand_a` through it — there is no brand parameter, and a smuggled
+  one is ignored.
+- **Layer 1 (rules, F3):** even a raw client talking straight to Firestore with a `brand_b`
+  token is denied `brand_a` at the database (`403`). The model sits outside both.
+
+### Run it on the emulator
+
+```bash
+cd firebase
+export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"   # Firestore emulator needs Java
+npm install --prefix functions                       # one-time: functions deps
+npm run emulators                                    # Auth + Firestore + Functions
+# in a second terminal:
+cd firebase && npm run seed && npm run migrate        # seeded identities + tiered data
+python3 verify_f4.py                                  # end-to-end matrix (see below)
+```
+
+The agent itself runs in Firebase mode from the repo root:
+
+```bash
+python -m src.cli --backend firebase --brand brand_a --role sales "Prep my briefing."
+```
+
+### Verification (`verify_f4.py`)
+
+Exercises the **real** path the agent uses (sign in to the Auth emulator → call the
+Functions with the token) and asserts the whole matrix:
+
+| Category | Checks |
+|---|---|
+| Per-role served vs withheld through `get_contract_terms` (sales operational-only & valueless; legal/power_user economic too) | 6 |
+| Cross-brand refused at **both** layers (L2 Function ignores smuggled brand; L1 rules `403`, with a same-brand `200` control) | 3 |
+| Fail-closed identities refused at the Function: no-claims, unauthenticated, unknown-role | 5 |
+| `draft_briefing` **byte-identical** firebase vs local, every principal | 6 |
+| **Total** | **20 checks, all passing** |
+
 ## Files
 
 | File | Purpose |
 |---|---|
-| `firebase.json` | Emulator config (Auth, Firestore, UI). No Functions, no Hosting. |
+| `firebase.json` | Emulator config (Auth, Firestore, **Functions**, UI). No Hosting. |
 | `.firebaserc` | `default → demo-access-control` (offline-only project id) |
-| `firestore.rules` | F0 placeholder, deny-all. Real tiered rules are F3. |
+| `firestore.rules` | Tiered brand + tier rules (F3). |
 | `firestore.indexes.json` | Empty — no composite indexes yet. |
 | `package.json` | Local `firebase-tools` toolchain, scoped to this folder. |
+| `functions/index.js` | F4 — the three callable read tools (verify token, read entitled tiers). |
+| `functions/package.json` | Functions codebase deps (`firebase-functions`, `firebase-admin`). |
+| `migrate/tiering.js` | F2 split + F4 `contract_field_index` (economic field **names**, no values). |
+| `verify_f4.py` | F4 end-to-end matrix (20 checks) against the emulator. |
