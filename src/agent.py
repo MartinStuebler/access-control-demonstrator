@@ -40,9 +40,10 @@ approval. Never claim something was shared."""
 
 class Agent:
     def __init__(self, principal: Principal, tools: GovernedTools,
-                 model: str = MODEL, effort: str = "medium") -> None:
+                 model: str = MODEL, effort: str = "medium", audit=None) -> None:
         self.principal = principal
         self.tools = tools
+        self.audit = audit  # optional AuditLog; run boundaries logged when present
         self.client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
         self.model = model
         self.effort = effort
@@ -51,6 +52,8 @@ class Agent:
             brand_name=acct.get("brand_name", principal.brand), role=principal.role)
 
     def run(self, user_query: str, max_turns: int = 8) -> str:
+        if self.audit is not None:
+            self.audit.run_start(user_query)
         messages = [{"role": "user", "content": user_query}]
         for _ in range(max_turns):
             resp = self.client.messages.create(
@@ -76,5 +79,9 @@ class Agent:
                 messages.append({"role": "user", "content": results})
                 continue
             # end_turn / refusal / max_tokens — return whatever text we have.
+            if self.audit is not None:
+                self.audit.run_end(status=resp.stop_reason or "completed")
             return "".join(b.text for b in resp.content if b.type == "text")
+        if self.audit is not None:
+            self.audit.run_end(status="max_turns_exceeded")
         return "[agent stopped: exceeded max turns]"
