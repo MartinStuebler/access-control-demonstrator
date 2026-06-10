@@ -1,0 +1,19 @@
+rules_version = '2';
+
+// F0 PLACEHOLDER — deny everything.
+//
+// The real tiered security rules (per-brand isolation, per-tier access for
+// contracts_operational / contracts_economic, audit collection writable only by
+// Functions) are F3, not now. This file exists only because the Firestore emulator
+// requires a rules file to boot.
+//
+// Deny-all here does NOT block later phases: F1/F2 seed data via the Admin SDK, which
+// bypasses security rules. So nothing reads through these rules until F3 replaces them.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

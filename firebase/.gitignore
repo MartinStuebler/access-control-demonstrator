@@ -1,0 +1,11 @@
+# Firebase emulator toolchain + artifacts — never committed
+node_modules/
+package-lock.json
+
+# Emulator debug logs and any exported state
+*-debug.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebase/
+emulator-data/
