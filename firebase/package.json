@@ -4,9 +4,12 @@
   "private": true,
   "description": "Firebase emulator config for the Access Control Demonstrator (Day 2). Isolated from the Day 1 Python build; nothing here touches src/ or Demo data/.",
   "scripts": {
-    "emulators": "firebase emulators:start"
+    "emulators": "firebase emulators:start",
+    "seed": "node seed/seed.js",
+    "verify": "node seed/verify.js"
   },
   "devDependencies": {
+    "firebase-admin": "^14.0.0",
     "firebase-tools": "^15.19.1"
   }
 }

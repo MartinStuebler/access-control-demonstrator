@@ -47,16 +47,55 @@ the repo root and fully isolated from Day 1.
 
 Open the dashboard at <http://localhost:4000>. Stop with `Ctrl-C`.
 
-## Identity model — notes for F1 (do NOT enable these now)
+## Seeded identity (F1)
 
-F1 will seed synthetic accounts only; there is no self-registration. Logins are
-identifier strings like `sales@lirelle.demo`, **not real mailboxes**. Therefore:
+Six synthetic accounts, created by the seed script only — **no self-registration**.
+Each carries its `brand` and `role` as **custom claims** on the signed ID token, set
+server-side via the Admin SDK. The client can never set or alter a claim.
+
+| Account | brand | role |
+|---|---|---|
+| `sales@lirelle.demo` | `brand_a` (Maison Lirelle) | `sales` |
+| `legal@lirelle.demo` | `brand_a` | `legal` |
+| `power@lirelle.demo` | `brand_a` | `power_user` |
+| `sales@solene.demo`  | `brand_b` (Atelier Solene) | `sales` |
+| `legal@solene.demo`  | `brand_b` | `legal` |
+| `power@solene.demo`  | `brand_b` | `power_user` |
+
+Shared password for all six (throwaway emulator identities): **`demo-password`**.
+
+### Run the seed + verification
+
+With the emulator running (see above), in a second terminal:
+
+```bash
+cd firebase
+npm run seed      # idempotent: creates the six accounts and sets brand/role claims
+npm run verify    # signs in as each, decodes the signed ID token, asserts the claims
+```
+
+`verify` also runs the **negative** check: it self-registers an account through the
+client sign-up endpoint *while trying to smuggle `brand`/`role`*, and shows the
+resulting token has neither — proving claims come from the Admin seed, never the
+client. Both scripts are emulator-only by construction (they refuse to run unless
+`FIREBASE_AUTH_EMULATOR_HOST` points at a local emulator).
+
+### Why the client cannot forge identity
+
+- Custom claims are written **only** by the privileged Admin SDK
+  (`setCustomUserClaims`), in `seed/seed.js`. Firebase client SDKs expose no method to
+  set a claim — they can only read it from the decoded token.
+- In production the Admin SDK requires a service-account key the client never holds,
+  and the claim is baked into the token Google signs. The emulator simulates this; the
+  carry-over property is that **no client path writes a claim**.
+
+### Identity model — what stays OFF (carry-over guardrail)
+
+Logins are identifier strings, **not real mailboxes**, so:
 
 - **Email/password sign-in only.**
 - **Do NOT enable** email verification, email-link (passwordless) sign-in, or
-  password-reset flows — every one of those tries to send mail to an address that
-  doesn't exist and will fail. Role and brand will be set as **custom claims** on the
-  ID token via the Admin SDK (server-side), never by the client.
+  password-reset — each would try to mail an address that doesn't exist and fail.
 
 ## Files
 
