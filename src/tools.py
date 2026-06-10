@@ -23,10 +23,11 @@ _OVERVIEW_SECTIONS = ("profile", "orders", "open_issues", "last_contact")
 
 
 class GovernedTools:
-    def __init__(self, store: AccountStore, principal: Principal) -> None:
+    def __init__(self, store: AccountStore, principal: Principal, audit=None) -> None:
         self.store = store
         self.principal = principal
         self.entitlements = store.get_entitlements()
+        self.audit = audit  # optional AuditLog; tool calls are logged when present
 
     # --- internals ---------------------------------------------------------
 
@@ -170,18 +171,40 @@ class GovernedTools:
 
     def dispatch(self, name: str, tool_input: dict) -> dict:
         """Route a model tool call to the bound method. brand/role are NOT accepted
-        from the model — only the declared parameters below are passed through."""
+        from the model — only the declared parameters below are passed through.
+        Every call is logged to the audit log (when present) with its served/withheld
+        manifest, scoped to the bound brand."""
         if name == "get_account_overview":
-            return self.get_account_overview()
-        if name == "get_contract_terms":
-            return self.get_contract_terms()
-        if name == "search_account_notes":
-            return self.search_account_notes(tool_input.get("query", ""))
-        if name == "draft_briefing":
-            return self.draft_briefing()
+            out = self.get_account_overview()
+        elif name == "get_contract_terms":
+            out = self.get_contract_terms()
+        elif name == "search_account_notes":
+            out = self.search_account_notes(tool_input.get("query", ""))
+        elif name == "draft_briefing":
+            out = self.draft_briefing()
+        elif name == "share_briefing":
+            out = self.share_briefing(tool_input.get("channel", ""))
+        else:
+            return {"error": f"unknown tool: {name}"}
+
+        if self.audit is not None:
+            self._audit(name, out)
+        return out
+
+    def _audit(self, name: str, out: dict) -> None:
         if name == "share_briefing":
-            return self.share_briefing(tool_input.get("channel", ""))
-        return {"error": f"unknown tool: {name}"}
+            self.audit.external_write_pending(name, out.get("destination", ""))
+            return
+        # Normalize the served field/section names across the different tool shapes.
+        if isinstance(out.get("served"), dict):
+            served = list(out["served"].keys())
+        elif "served_terms" in out:
+            served = list(out["served_terms"])
+        elif "matches" in out:
+            served = [m.get("id") for m in out["matches"]]
+        else:
+            served = []
+        self.audit.tool_call(name, served, out.get("withheld", []))
 
 
 # Model-facing schemas. Note the absence of brand/role: identity is bound at launch
