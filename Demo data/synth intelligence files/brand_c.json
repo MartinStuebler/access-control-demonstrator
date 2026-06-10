@@ -1,0 +1,57 @@
+{
+  "brand_id": "brand_c",
+  "brand_name": "Halden & Co",
+  "_schema_note": "Section-level visibility: profile=public; orders, open_issues, last_contact, notes=operational. Field-level visibility lives inside contract_terms. visibility values: public | operational | economic.",
+
+  "profile": {
+    "visibility": "public",
+    "segment": "Contemporary brand, higher-volume commercial buyer",
+    "relationship_owner": "Account lead, EU",
+    "status": "Active supply partner",
+    "first_engaged": "2024-Q2"
+  },
+
+  "orders": {
+    "visibility": "operational",
+    "items": [
+      { "po": "HAL-905", "material": "SAVANA plant-based fur", "colorway": "Charcoal", "qty_lm": 600, "ship_date": "2025-04-02", "status": "Delivered" },
+      { "po": "HAL-942", "material": "SAVANA plant-based fur", "colorway": "Sand", "qty_lm": 550, "ship_date": "2025-08-15", "status": "Delivered" },
+      { "po": "HAL-961", "material": "SAVANA plant-based fur", "colorway": "Charcoal", "qty_lm": 700, "ship_date": "2025-11-01", "status": "In production" }
+    ]
+  },
+
+  "open_issues": {
+    "visibility": "operational",
+    "items": [
+      { "ticket": "HAL-T08", "summary": "Asked about volume break above 8,000 lm for next year", "severity": "Low", "opened": "2025-09-18" }
+    ]
+  },
+
+  "last_contact": {
+    "visibility": "operational",
+    "date": "2025-09-25",
+    "channel": "Call",
+    "summary": "Discussed scaling annual volume and standard colorways for a broad commercial range. No exclusivity requested."
+  },
+
+  "contract_terms": {
+    "term_length": { "value": "12 months", "visibility": "operational" },
+    "delivery_lead_time": { "value": "8 weeks from PO confirmation", "visibility": "operational" },
+    "minimum_order_quantity": { "value": "500 linear meters per colorway", "visibility": "operational" },
+    "annual_volume_commitment": { "value": "6,000 linear meters", "visibility": "operational" },
+    "sample_obligations": { "value": "1 pre-production sample per colorway", "visibility": "operational" },
+    "exclusivity": { "value": "None. Standard colorways only.", "visibility": "operational" },
+    "unit_price": { "value": "EUR 310 per linear meter", "visibility": "economic" },
+    "price_escalator": { "value": "2% per contract year", "visibility": "economic" },
+    "volume_rebate": { "value": "3% rebate above 8,000 linear meters annually", "visibility": "economic" },
+    "late_delivery_penalty": { "value": "1% of PO value per week late, capped at 8%", "visibility": "economic" }
+  },
+
+  "notes": {
+    "visibility": "operational",
+    "items": [
+      { "id": "n1", "text": "Price-sensitive, volume-driven. Lead with lead times and the volume rebate path." },
+      { "id": "n2", "text": "No exclusivity interest, so this account is a safe contrast to the luxury houses." }
+    ]
+  }
+}

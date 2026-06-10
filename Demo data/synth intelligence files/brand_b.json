@@ -1,0 +1,58 @@
+{
+  "brand_id": "brand_b",
+  "brand_name": "Atelier Solene",
+  "_schema_note": "Section-level visibility: profile=public; orders, open_issues, last_contact, notes=operational. Field-level visibility lives inside contract_terms. visibility values: public | operational | economic.",
+
+  "profile": {
+    "visibility": "public",
+    "segment": "Eco-luxury house, sustainability-led ready-to-wear",
+    "relationship_owner": "Account lead, EU",
+    "status": "Active supply partner",
+    "first_engaged": "2023-Q3"
+  },
+
+  "orders": {
+    "visibility": "operational",
+    "items": [
+      { "po": "SOL-330", "material": "SAVANA plant-based fur", "colorway": "Sable Clair", "qty_lm": 160, "ship_date": "2025-03-11", "status": "Delivered" },
+      { "po": "SOL-351", "material": "SAVANA plant-based fur", "colorway": "Mousse", "qty_lm": 150, "ship_date": "2025-06-20", "status": "Delivered" },
+      { "po": "SOL-368", "material": "SAVANA plant-based fur", "colorway": "Sable Clair", "qty_lm": 170, "ship_date": "2025-10-08", "status": "Open" }
+    ]
+  },
+
+  "open_issues": {
+    "visibility": "operational",
+    "items": [
+      { "ticket": "SOL-T14", "summary": "Requested updated bio-content certification for FW26 marketing claims", "severity": "Medium", "opened": "2025-09-30" }
+    ]
+  },
+
+  "last_contact": {
+    "visibility": "operational",
+    "date": "2025-10-02",
+    "channel": "Email",
+    "summary": "They want certification paperwork ahead of a press moment and asked whether Sable Clair can stay exclusive through SS27."
+  },
+
+  "contract_terms": {
+    "term_length": { "value": "18 months", "visibility": "operational" },
+    "delivery_lead_time": { "value": "10 weeks from PO confirmation", "visibility": "operational" },
+    "minimum_order_quantity": { "value": "150 linear meters per colorway", "visibility": "operational" },
+    "annual_volume_commitment": { "value": "1,800 linear meters", "visibility": "operational" },
+    "sample_obligations": { "value": "2 pre-production samples per colorway, supplier cost", "visibility": "operational" },
+    "sustainability_clause": { "value": "Certified bio-based inputs, annual third-party audit rights for the buyer", "visibility": "operational" },
+    "unit_price": { "value": "EUR 390 per linear meter", "visibility": "economic" },
+    "price_escalator": { "value": "3% per contract year", "visibility": "economic" },
+    "exclusivity": { "value": "Exclusive rights to the Sable Clair colorway for 18 months", "visibility": "economic" },
+    "margin_floor": { "value": "Supplier gross margin floor 35%", "visibility": "economic" },
+    "late_delivery_penalty": { "value": "2% of PO value per week late, capped at 12%", "visibility": "economic" }
+  },
+
+  "notes": {
+    "visibility": "operational",
+    "items": [
+      { "id": "n1", "text": "Sustainability story is central to this account. Have the certification status ready for every call." },
+      { "id": "n2", "text": "They move slower on approvals but rarely renegotiate price once set." }
+    ]
+  }
+}

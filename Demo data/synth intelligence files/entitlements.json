@@ -1,0 +1,28 @@
+{
+  "_note": "Entitlements are config, not code. To onboard a new customer's permission model, edit this file, do not change the agent. visibility levels a role may see are listed below. The brand axis is enforced separately: every run is bound to exactly one brand at invocation, and no role can change its own brand or role.",
+
+  "roles": {
+    "sales": {
+      "description": "Primary call-prep principal. Operational view only.",
+      "can_see": ["public", "operational"],
+      "cross_brand": false
+    },
+    "legal": {
+      "description": "Exists to prove the field boundary. Sees all fields of one brand. Never runs its own brief.",
+      "can_see": ["public", "operational", "economic"],
+      "cross_brand": false
+    },
+    "power_user": {
+      "description": "In-house team or consultant. All fields, and may be bound to either brand across separate runs. Still one brand per run.",
+      "can_see": ["public", "operational", "economic"],
+      "cross_brand": true
+    }
+  },
+
+  "enforcement_rules": [
+    "A field is returned only if its visibility is in the running role's can_see list.",
+    "A tool call for brand X never returns data from any other brand, regardless of role.",
+    "cross_brand=true means the role may be bound to different brands on different runs. It does NOT permit returning two brands in one run.",
+    "Every served and withheld field is written to the audit log with the reason."
+  ]
+}

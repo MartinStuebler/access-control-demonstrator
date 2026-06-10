@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Secrets — the Anthropic API key is read from the environment, never committed
+.env
+
+# Audit logs are run evidence, regenerated per run; keep the dir, not the logs
+audit/*.jsonl
+
+# macOS
+.DS_Store
