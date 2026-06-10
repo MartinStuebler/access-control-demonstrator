@@ -4,11 +4,11 @@
 // Custom claims are written ONLY here (setCustomUserClaims). There is no client API
 // that can write them — that is the unforgeable-binding property this phase exists for.
 
-const { initEmulatorAdmin } = require("./emulator");
+const { initEmulatorAdmin } = require("../lib/emulator");
 const { getAuth } = require("firebase-admin/auth");
 const { ACCOUNTS, SHARED_PASSWORD } = require("./accounts");
 
-const { host } = initEmulatorAdmin();
+const { authHost: host } = initEmulatorAdmin();
 const auth = getAuth();
 
 async function ensureUser(email, password) {

@@ -6,7 +6,9 @@
   "scripts": {
     "emulators": "firebase emulators:start",
     "seed": "node seed/seed.js",
-    "verify": "node seed/verify.js"
+    "verify": "node seed/verify.js",
+    "migrate": "node migrate/migrate.js",
+    "migrate:verify": "node migrate/verify.js"
   },
   "devDependencies": {
     "firebase-admin": "^14.0.0",
