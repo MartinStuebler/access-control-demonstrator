@@ -5,11 +5,11 @@
 //      while trying to smuggle brand/role in the request — gets a token with NO claims.
 //      This proves claims come from the Admin seed, never from the client or by default.
 
-const { initEmulatorAdmin } = require("./emulator");
+const { initEmulatorAdmin } = require("../lib/emulator");
 const { getAuth } = require("firebase-admin/auth");
 const { ACCOUNTS, SHARED_PASSWORD } = require("./accounts");
 
-const { host } = initEmulatorAdmin();
+const { authHost: host } = initEmulatorAdmin();
 const auth = getAuth();
 const API = `http://${host}/identitytoolkit.googleapis.com/v1`;
 

@@ -97,6 +97,50 @@ Logins are identifier strings, **not real mailboxes**, so:
 - **Do NOT enable** email verification, email-link (passwordless) sign-in, or
   password-reset — each would try to mail an address that doesn't exist and fail.
 
+## Tiered Firestore data (F2)
+
+The Day 1 **field** boundary becomes a Firestore **document** boundary, because rules
+allow a whole document or none. Each brand is split into two collections, document id =
+brand:
+
+| Collection | Holds | Visible to |
+|---|---|---|
+| `accounts_operational/{brand}` | `profile` + `orders` + `open_issues` + `last_contact` + `notes`, plus the **operational** fields of `contract_terms` | sales, legal, power_user |
+| `accounts_economic/{brand}` | only the **economic** fields of `contract_terms` | legal, power_user |
+
+The two tiers map exactly to the Day 1 `can_see` boundary (sales = public+operational;
+legal/power_user add economic). A `power_user` reads both tiers of its bound brand,
+never another brand — F3's rules enforce that at the database.
+
+> **Naming note:** PRD §17 sketches `contracts_*`; this uses `accounts_*` because the
+> operational tier holds the whole account picture (orders, notes, …), not just
+> contract terms. `brand_id`/`brand_name` are carried in both docs as identifiers;
+> `_schema_note` (a developer comment) is excluded.
+
+**Tag-driven, fail-closed.** The tier of every unit is read from its own `visibility`
+tag (`migrate/tiering.js`), never a hardcoded field list — brand_c's `exclusivity`
+(tagged operational) lands in the operational tier, while brand_a/brand_b's (economic)
+land in the economic tier. A field with a missing or unknown tag aborts the migration
+rather than silently landing in the more-visible tier.
+
+### Run the migration + reconciliation
+
+With the emulator running:
+
+```bash
+cd firebase
+npm run migrate          # idempotent: writes both tiers per brand into Firestore
+npm run migrate:verify   # reconciles: union of tiers == source, disjoint, tag-faithful
+```
+
+`migrate:verify` prints a per-brand field-count table (source vs operational vs
+economic) and the canary placement, and exits non-zero on any mismatch. Both scripts
+are emulator-only by construction.
+
+> A benign `MetadataLookupWarning` may print: the Admin SDK probes for Google
+> credentials it doesn't need against the emulator. All operations succeed; it can be
+> ignored.
+
 ## Files
 
 | File | Purpose |
