@@ -8,6 +8,26 @@ venv/
 
 # Secrets — the Anthropic API key is read from the environment, never committed
 .env
+*.env
+.env.*
+# Firebase / GCP service-account keys — never commit these
+*serviceAccount*.json
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+*.pem
+*.key
+
+# Node / Firebase toolchain
+node_modules/
+.firebase/
+firebase-export-*/
+# Firebase emulator debug logs
+*-debug.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
 
 # Audit logs are run evidence, regenerated per run; keep the dir, not the logs
 audit/*.jsonl
