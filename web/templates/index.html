@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Access Control Demonstrator — governed briefing</title>
+<style>
+  :root { --ink:#1d2330; --muted:#6b7280; --line:#e5e7eb; --bg:#f7f8fa;
+          --served:#0f7b4f; --withheld:#9aa1ad; --refuse:#b42318; --accent:#2f5fe0; }
+  * { box-sizing: border-box; }
+  body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); margin: 0; padding: 2rem; }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 1.35rem; margin: 0 0 .25rem; }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px;
+           padding: 1.1rem 1.25rem; margin-bottom: 1rem; }
+  .controls { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; }
+  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .25rem; }
+  select, input[type=text] { font: inherit; padding: .45rem .6rem; border: 1px solid var(--line);
+           border-radius: 7px; background: #fff; }
+  input[type=text] { width: 100%; }
+  .grow { flex: 1 1 320px; }
+  button { font: inherit; font-weight: 600; padding: .5rem .9rem; border-radius: 7px;
+           border: 1px solid transparent; cursor: pointer; }
+  .primary { background: var(--accent); color: #fff; }
+  .danger { background: #fff; color: var(--refuse); border-color: #f0c2bd; }
+  .row { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: .9rem; }
+  .scope { font-size: .85rem; color: var(--muted); }
+  .scope b { color: var(--ink); }
+  h2 { font-size: .95rem; text-transform: uppercase; letter-spacing: .04em;
+       color: var(--muted); margin: 0 0 .6rem; }
+  .terms { list-style: none; padding: 0; margin: 0; }
+  .terms li { padding: .35rem 0; border-bottom: 1px dashed var(--line); display: flex; gap: .5rem; }
+  .terms li:last-child { border-bottom: 0; }
+  .fname { min-width: 230px; font-weight: 600; }
+  .served .fval { color: var(--served); }
+  .withheld { color: var(--withheld); }
+  .withheld .fname { text-decoration: line-through; font-weight: 600; }
+  .withheld .tag { font-size: .72rem; background: #eef0f3; color: var(--withheld);
+                   padding: .1rem .45rem; border-radius: 999px; align-self: center; }
+  pre.brief { white-space: pre-wrap; background: #0f1422; color: #e8ecf4; padding: 1rem;
+              border-radius: 8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .refusal { border-left: 4px solid var(--refuse); background: #fff6f5; padding: .8rem 1rem;
+             border-radius: 0 8px 8px 0; }
+  .refusal .code { font: 12px ui-monospace, Menlo, monospace; color: var(--refuse); }
+  .ok { color: var(--served); font-weight: 600; }
+  .hint { color: var(--muted); font-size: .82rem; margin-top: .4rem; }
+  details { margin-top: .8rem; } summary { cursor: pointer; color: var(--accent); font-size: .85rem; }
+  details pre { white-space: pre-wrap; background: #0f1422; color: #cfe3ff; padding: .8rem;
+                border-radius: 8px; font: 12px ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Access Control Demonstrator</h1>
+  <p class="sub">A presentation layer over the governed backend. Enforcement lives server-side;
+     this page only renders what it is handed — and is handed <b>names, never values,</b> for
+     withheld fields.</p>
+
+  <div class="panel">
+    <div class="controls">
+      <div>
+        <label for="brand">Brand</label>
+        <select id="brand">
+          {% for b in brands %}<option value="{{ b.id }}">{{ b.name }} ({{ b.id }})</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="role">Role</label>
+        <select id="role">
+          {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="grow">
+        <label for="query">Query</label>
+        <input id="query" type="text" value="Prepare my pre-call briefing for this account.">
+      </div>
+    </div>
+    <div class="row">
+      <button class="primary" onclick="generate()">Generate briefing</button>
+      <button class="danger" onclick="crossBrand()">Attempt to pull the rival brand's data</button>
+    </div>
+    <p class="hint">Change the role and click Generate again: pricing &amp; exclusivity appear for
+       <b>legal</b>/<b>power_user</b> and are greyed for <b>sales</b> — the same query, a different brief.</p>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function postJSON(url, body) {
+  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                             body: JSON.stringify(body)});
+  return {status: r.status, data: await r.json()};
+}
+
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function pretty(field){ return esc(field).replace(/_/g, ' '); }
+
+async function generate() {
+  const brand = $("brand").value, role = $("role").value, query = $("query").value;
+  const {data} = await postJSON("/api/brief", {brand, role, query});
+  if (data.error) { $("out").innerHTML = `<div class="panel refusal">${esc(data.error)}</div>`; return; }
+
+  const ct = data.contract_terms;
+  const served = Object.entries(ct.served)
+    .map(([k,v]) => `<li class="served"><span class="fname">${pretty(k)}</span><span class="fval">${esc(v)}</span></li>`)
+    .join("");
+  const withheld = ct.withheld
+    .map(n => `<li class="withheld"><span class="fname">${pretty(n)}</span><span class="tag">withheld at your access level</span></li>`)
+    .join("");
+
+  $("out").innerHTML = `
+    <div class="panel">
+      <p class="scope">Brief for <b>${esc(data.brand_name)}</b> · access level <b>${esc(data.role)}</b></p>
+      <h2>Contract terms</h2>
+      <ul class="terms">${served}${withheld || ""}</ul>
+      ${withheld ? '' : '<p class="hint ok">All contract terms entitled at this access level.</p>'}
+    </div>
+    <div class="panel">
+      <h2>Rendered briefing (the deterministic governed output)</h2>
+      <pre class="brief">${esc(data.briefing)}</pre>
+      <details>
+        <summary>Show the exact JSON the server sent this browser (proof: no withheld values)</summary>
+        <pre>${esc(JSON.stringify(data, null, 2))}</pre>
+      </details>
+    </div>`;
+}
+
+async function crossBrand() {
+  const brand = $("brand").value, role = $("role").value;
+  const {data} = await postJSON("/api/cross-brand", {brand, role});
+  if (data.error) { $("out").innerHTML = `<div class="panel refusal">${esc(data.error)}</div>`; return; }
+  $("out").innerHTML = `
+    <div class="panel">
+      <h2>Cross-brand attempt</h2>
+      <div class="refusal">
+        <p><b>${esc(data.bound_brand_name)}</b> (${esc(data.role)}) tried to read
+           <b>${esc(data.requested_brand_name)}</b> — <b style="color:var(--refuse)">REFUSED</b>.</p>
+        <p class="code">${esc(data.code)}: ${esc(data.reason)}</p>
+      </div>
+      <p class="ok" style="margin-top:.8rem">✓ Rival brand never accessed —
+         <code>rival_accessed: ${data.rival_accessed}</code>. The block returns at the tenancy
+         gate, before any read of ${esc(data.requested_brand_name)}'s account.</p>
+      <details>
+        <summary>Show the exact JSON the server sent this browser</summary>
+        <pre>${esc(JSON.stringify(data, null, 2))}</pre>
+      </details>
+    </div>`;
+}
+</script>
+</body>
+</html>
