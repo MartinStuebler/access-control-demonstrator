@@ -12,6 +12,11 @@ human approval on external writes.
 > built so an injected instruction in the data is **inert by construction** rather than
 > caught by a detector.
 
+<img width="710" height="633" alt="Screenshot 2026-06-11 at 3 40 06 PM" src="https://github.com/user-attachments/assets/4298d5ba-1c62-43fb-8426-136e3ed70dac" />
+
+<img width="710" height="633" alt="Screenshot 2026-06-11 at 3 40 06 PM" src="https://github.com/user-attachments/assets/4e5dc89b-d22c-4bf8-b273-8b69caa59f14" />
+
+
 ---
 
 ## 1. The thesis (the one claim everything reduces to)
