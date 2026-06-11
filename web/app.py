@@ -18,12 +18,17 @@ Run:  python -m web.app    (then open http://127.0.0.1:5055)  — offline, no AP
 """
 from __future__ import annotations
 
+import os
+
+from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 
 # Reuse the EXACT local backend the CLI's `--backend local` and the tests use.
 from src.policy import Principal, decide
 from src.store import LocalJsonAccountStore
 from src.tools import GovernedTools
+
+load_dotenv()  # picks up ANTHROPIC_API_KEY from the gitignored .env, for the chat route only
 
 app = Flask(__name__)
 
@@ -206,6 +211,105 @@ def api_cross_brand():
     })
 
 
+# ───────────────────────── chat demo (model-in-the-loop) ──────────────────────────
+# A SECOND, optional route that talks to the REAL governed agent (src/agent.py), so a
+# viewer can watch the model read an attack and still fail to leak — because the tools
+# are bound. This is additive: the deterministic face above is untouched and stays the
+# offline fallback. The agent path needs ANTHROPIC_API_KEY (handled gracefully below).
+
+
+class RecordingTools:
+    """Presentation-only wrapper around GovernedTools. It delegates EVERY call to the
+    real governed tools (so enforcement is 100% unchanged) and records a redacted summary
+    of each call — tool name + served field NAMES + withheld NAMES — for the UI's inline
+    "what the agent did" trace. It never records or exposes a value, and it adds no
+    enforcement of its own. The agent only ever calls .dispatch(); __getattr__ forwards
+    anything else to the inner tools so this is a transparent stand-in."""
+
+    def __init__(self, inner: GovernedTools) -> None:
+        self._inner = inner
+        self.calls: list[dict] = []
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    @staticmethod
+    def _summary(name: str, out: dict) -> dict:
+        served_names, withheld_names = [], []
+        if isinstance(out.get("served"), dict):
+            served_names = list(out["served"].keys())
+        elif "served_terms" in out:
+            served_names = list(out["served_terms"])
+        elif "matches" in out:
+            served_names = [m.get("id") for m in out["matches"]]
+        for w in out.get("withheld", []) or []:
+            withheld_names.append(w.get("field") or w.get("section"))
+        return {"tool": name, "served": served_names, "withheld": withheld_names}
+
+    def dispatch(self, name: str, tool_input: dict) -> dict:
+        out = self._inner.dispatch(name, tool_input)   # the governed result, unchanged
+        self.calls.append(self._summary(name, out))    # NAMES only — never a value
+        return out
+
+
+@app.get("/chat")
+def chat_page():
+    return render_template("chat.html", brands=_brands(), roles=VALID_ROLES,
+                           has_key=bool(os.getenv("ANTHROPIC_API_KEY")))
+
+
+@app.post("/api/chat")
+def api_chat():
+    """Send one message to the REAL governed agent, bound to (brand, role) from the
+    SELECTORS. Returns the model's spoken reply + a redacted tool-call trace. The model
+    only ever receives served data via the governed tools, so no withheld value can enter
+    its context — and therefore none can enter the transcript shown to the browser."""
+    data = request.get_json(silent=True) or {}
+    brand = data.get("brand", "")
+    role = data.get("role", "")
+    message = (data.get("message") or "").strip()
+
+    # Brand/role come ONLY from the selectors, allowlist-validated. The typed `message`
+    # is never parsed for identity — it cannot re-bind the principal.
+    if brand not in _store.list_brands():
+        return jsonify({"error": f"unknown brand {brand!r}"}), 400
+    if role not in VALID_ROLES:
+        return jsonify({"error": f"unknown role {role!r}"}), 400
+    if not message:
+        return jsonify({"error": "empty message"}), 400
+
+    # Graceful missing-key handling — never crash, never hardcode a key.
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        return jsonify({
+            "need_api_key": True,
+            "error": ("No ANTHROPIC_API_KEY in the environment. Set it (e.g. in a "
+                      "gitignored .env, or `export ANTHROPIC_API_KEY=...`) and reload. "
+                      "The deterministic web face at / needs no key."),
+        }), 503
+
+    # Lazy import so the deterministic face never depends on the agent/SDK at all.
+    from src.agent import Agent
+
+    principal = Principal(brand=brand, role=role)          # from selectors only, frozen
+    tools = RecordingTools(GovernedTools(_store, principal))
+    agent = Agent(principal, tools, brand_name=_brand_name(brand))
+
+    try:
+        reply = agent.run(message)                          # the real governed tool loop
+    except Exception as e:  # API/network/etc. — surface, don't crash the page
+        return jsonify({"error": f"agent error: {type(e).__name__}: {e}"}), 502
+
+    return jsonify({
+        "bound": {"brand": principal.brand, "role": principal.role,
+                  "source": "selectors (the typed message cannot change this)"},
+        "brand_name": _brand_name(brand),
+        "message": message,
+        "reply": reply,                  # model text; grounded only in served tool output
+        "tool_calls": tools.calls,       # redacted trace: tool + served/withheld NAMES
+    })
+
+
 if __name__ == "__main__":
-    # Local only, fixed port, no debug reloader noise. Offline; no API key needed.
+    # Local only, fixed port, no debug reloader noise. The deterministic face needs no
+    # key; the /chat route uses ANTHROPIC_API_KEY from env if present.
     app.run(host="127.0.0.1", port=5055, debug=False)

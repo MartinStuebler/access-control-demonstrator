@@ -49,6 +49,27 @@ their values appear **nowhere** in the response.
 
 | Route | Purpose |
 |---|---|
-| `GET /` | the page |
+| `GET /` | the deterministic face (page) |
 | `POST /api/brief` `{brand, role, query}` | governed brief: `contract_terms.served` (values) + `contract_terms.withheld` (names) |
 | `POST /api/cross-brand` `{brand, role}` | fires `decide()` against a rival brand; returns the refusal + `rival_accessed: false` |
+| `GET /chat` | the model-in-the-loop chat (page) — *optional, needs an API key* |
+| `POST /api/chat` `{brand, role, message}` | one governed agent run bound to the selectors; returns the model's reply + a redacted tool-call trace |
+
+## Chat demo (model-in-the-loop) — `/chat`
+
+A second, **optional** page that talks to the *real* governed agent (`src/agent.py`),
+so a viewer can watch the model read an attack and still fail to leak — because its tools
+are bound to the selected principal. This is the visceral version; the deterministic face
+at `/` stays the reliable, offline fallback and is untouched by it.
+
+- The agent is reused **unchanged**; the chat layer wraps `GovernedTools` in a
+  presentation-only `RecordingTools` that delegates every call to the real tools and
+  records only the tool name + served/withheld **names** for the inline trace — never a
+  value.
+- Brand/role come only from the selectors (allowlist-validated); the typed message is
+  never parsed for identity, so it cannot re-bind the principal.
+- The model only ever receives **served** data via the governed tools, so no withheld
+  value can enter its context — and therefore none can enter the transcript.
+- Needs `ANTHROPIC_API_KEY` in the environment (read from env / a gitignored `.env`,
+  never committed). If it's missing, `/chat` shows a clear "set your API key" message and
+  the deterministic face still works without it.
