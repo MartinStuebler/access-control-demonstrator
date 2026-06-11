@@ -80,9 +80,11 @@ def _run_firebase(args, principal: Principal) -> int:
     """Firebase mode: the agent's tools are Cloud Functions on the emulator. Identity is
     a signed ID token, not a config value; the Functions verify it and read only entitled
     tiers. The Agent class itself is unchanged — it just gets a different tools object,
-    and still holds no direct data source. (Audit-to-Firestore is F5; this phase runs
-    without the local audit sink to keep the two concerns separate.)"""
-    from .fb_backend import FunctionsTools, FirebaseFunctionError, ACCOUNT_EMAILS
+    and still holds no direct data source. (F5) Audit events go to the Firestore `audit`
+    collection through the Admin-path log_audit Function: same AuditLog interface as local
+    mode, Firestore sink instead of JSONL. A client cannot write `audit` directly."""
+    from .fb_backend import (FunctionsTools, FirebaseFunctionError, FirestoreAuditSink,
+                             ACCOUNT_EMAILS)
     if (args.brand, args.role) not in ACCOUNT_EMAILS:
         seeded = ", ".join(f"{b}/{r}" for (b, r) in ACCOUNT_EMAILS)
         print(f"no seeded Firebase identity for {args.brand}/{args.role}; "
@@ -96,10 +98,30 @@ def _run_firebase(args, principal: Principal) -> int:
               f"(cd firebase && npm run emulators)?  detail: {e}", file=sys.stderr)
         return 1
 
-    agent = Agent(principal, tools, effort=args.effort, audit=None, brand_name=brand_name)
-    print(f"[firebase run bound to brand={principal.brand} role={principal.role} "
-          f"as {tools.email}; tools are Cloud Functions]", file=sys.stderr)
+    # Audit -> Firestore via the Admin path. The sink rides the run's signed token; the
+    # log_audit Function re-derives brand/role server-side, so the trail is unforgeable.
+    audit = AuditLog(principal, sink=FirestoreAuditSink(tools._id_token))
+    tools.audit = audit  # every tool call now logs served/withheld, scoped to this brand
+
+    agent = Agent(principal, tools, effort=args.effort, audit=audit, brand_name=brand_name)
+    print(f"[firebase run {audit.run_id} bound to brand={principal.brand} "
+          f"role={principal.role} as {tools.email}; tools are Cloud Functions]",
+          file=sys.stderr)
     print(agent.run(args.query))
+
+    # Operator probe: the agent has no brand parameter, so a cross-brand request can only
+    # come from the operator/eval harness. Log it as an operator-initiated block — both
+    # layers refuse it live (F4 Function ignores a smuggled brand; F3 rules deny the raw
+    # read). This puts the honest "operator probed, policy refused" line in the trail.
+    if args.cross_brand_probe:
+        reason = (f"cross-brand read of {args.cross_brand_probe} refused: the Function "
+                  f"ignores a smuggled brand (identity is the token = {principal.brand}) "
+                  f"and the F3 rules deny a raw read at the database (403).")
+        audit.cross_brand_block(args.cross_brand_probe, reason, initiated_by="operator_probe")
+        print(f"\n[cross-brand probe] requested {args.cross_brand_probe}: "
+              f"blocked (operator-initiated) — logged to Firestore audit.", file=sys.stderr)
+
+    print(f"[audit: Firestore `audit` collection | run_id={audit.run_id}]", file=sys.stderr)
     return 0
 
 

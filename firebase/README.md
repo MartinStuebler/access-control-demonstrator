@@ -222,7 +222,7 @@ economic fields but must not read the economic doc. So the migration writes the 
 field **names** (not values) into the operational doc as `contract_field_index` (source
 order, each tagged with its tier). Sales reads only the operational doc, serves operational
 fields, and names the economic ones as withheld — their **values never leave the economic
-tier**. (Audit-to-Firestore is **F5**; F4 runs without the local audit sink.)
+tier**. (Audit-to-Firestore is **F5**, below.)
 
 ### The two layers, both refusing
 
@@ -263,7 +263,95 @@ Functions with the token) and asserts the whole matrix:
 | `draft_briefing` **byte-identical** firebase vs local, every principal | 6 |
 | **Total** | **20 checks, all passing** |
 
+## Audit to Firestore (F5)
+
+The Day 1 audit log (`src/audit.py`) had one sink: append-only JSONL. F5 gives it a
+**second sink** — a Firestore `audit` collection — selected by the active backend. **One
+audit interface, two sinks**: local mode still writes JSONL (unchanged, the offline
+baseline); firebase mode writes to Firestore. The events and their fields are assembled
+once, in `AuditLog`; only the destination differs. Same shapes either way: `run_start`,
+`tool_call` (with `served`/`withheld`), `run_end`, `cross_brand_block` (with
+`initiated_by`).
+
+**The integrity property: the trail cannot be forged or erased by a client.** An audit
+log is only evidence if a client can neither add a fake line nor delete a real one.
+
+- **Writes go through the Admin path, never a client.** The Python backend signs in as an
+  ordinary seeded user — it holds only client privileges, and the F3 rules deny *every*
+  client write to `audit`. The only way to append is the new **`log_audit` callable
+  Function** (`functions/index.js`), which writes with the Admin SDK (bypassing rules),
+  the same discipline as seed/migrate and the read tools.
+- **Identity is server-authoritative.** `log_audit` re-derives `brand`/`role` from the
+  **verified token** and stamps `ts` from the server clock — the client-sent values for
+  those three keys are dropped. A caller cannot attribute a line to another brand/role or
+  backdate it. (The event payload — `tool`, `served`, `withheld`, … — is the caller's
+  report of what it did.) Fail-closed: unauthenticated / no-claims / unknown-role callers
+  cannot write a line at all.
+- **Append-only.** `log_audit` only ever adds a document; there is **no** update or delete
+  Function anywhere, and the rules deny client update/delete. Once written, an entry is
+  immutable through every path.
+
+The rule that makes it tamper-evident (`firestore.rules`):
+
+```
+match /audit/{entry} {
+  allow read:  if false;   // evidence: shown via the Admin console, not client-readable
+  allow write: if false;   // create, update, AND delete denied for every client
+}
+```
+
+In Firestore rules, `write` folds in create, update, and delete — so this one line denies
+a client write **and** a client delete. The `assert_rules.js` suite asserts both
+explicitly (the suite now totals **80** assertions).
+
+### Run a firebase-mode run and see its trail
+
+```bash
+# emulator running, seeded + migrated (see above):
+python -m src.cli --backend firebase --brand brand_a --role sales \
+  --cross-brand-probe brand_b "Prep my briefing."
+```
+
+The terminal footer prints the `run_id`; open the `audit` collection in the Emulator UI
+(<http://localhost:4000> → Firestore) to see `run_start`, the `tool_call`s (operational
+field names served, economic field names withheld — **names, no values**), `run_end`, and
+the operator-initiated `cross_brand_block`, all scoped to `brand_a`. See `../DEMO.md` for
+the full console walkthrough.
+
+> A failed audit write prints a loud `[audit] WARN` to stderr (an evidence gap is never
+> swallowed) but does not crash the brief — the run still completes.
+
+### Verification (`verify_f5.py`)
+
+Drives the real audit path (`AuditLog → FirestoreAuditSink → log_audit → Firestore`),
+reads the collection back via the emulator owner endpoint, and asserts:
+
+| Category | Checks |
+|---|---|
+| A run writes `run_start` / `tool_call` (served+withheld) / `run_end` to Firestore | 3 |
+| `get_contract_terms` records operational names served, economic names withheld (no values) | 2 |
+| Every line scoped to the bound brand; nothing from another brand | 1 |
+| `cross_brand_block` present, `initiated_by=operator_probe` (not the model) | 1 |
+| Identity server-authoritative: a forged `brand_b`/`legal`/1999-`ts` stored as token's `brand_a`/`sales`/server-time | 3 |
+| Authenticated **ordinary seeded user** denied client write + delete + read on `audit` (`403`) | 3 |
+| **Total** | **13 checks, all passing** |
+
 ## Files
+
+| File | Purpose |
+|---|---|
+| `firebase.json` | Emulator config (Auth, Firestore, **Functions**, UI). No Hosting. |
+| `.firebaserc` | `default → demo-access-control` (offline-only project id) |
+| `firestore.rules` | Tiered brand + tier rules (F3) + **append-only `audit` block (F5)**. |
+| `firestore.indexes.json` | Empty — no composite indexes yet. |
+| `package.json` | Local `firebase-tools` toolchain, scoped to this folder. |
+| `functions/index.js` | F4 read tools + **F5 `log_audit`** (Admin-path audit sink). |
+| `functions/package.json` | Functions codebase deps (`firebase-functions`, `firebase-admin`). |
+| `migrate/tiering.js` | F2 split + F4 `contract_field_index` (economic field **names**, no values). |
+| `rules/assert_rules.js` | Exhaustive rules suite (80), isolated project so it never clobbers demo data. |
+| `verify_f4.py` | F4 end-to-end matrix (20 checks) against the emulator. |
+| `verify_f5.py` | F5 audit-to-Firestore matrix (13 checks): trail, scope, integrity, deny proofs. |
+| `../DEMO.md` | Console-walkthrough script for the live closing beat. |
 
 | File | Purpose |
 |---|---|
