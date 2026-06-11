@@ -53,9 +53,19 @@ function splitBrand(src) {
     if (src[s] === undefined) continue;
     docs[tierFor(src[s].visibility, `${brand}.${s}`)][s] = src[s];
   }
+  // contract_field_index: the NAMES of every contract field, in source order, each
+  // tagged with the tier it lives in. It is written to the OPERATIONAL doc (F4), where
+  // sales — who cannot read the economic doc — can still learn that economic fields
+  // EXIST and name them as withheld, without their VALUES ever leaving the economic
+  // tier. This is the "names, not values" disclosure the Day 1 brief makes, preserved
+  // under document-tier enforcement. Names are non-sensitive structural metadata.
+  const contract_field_index = [];
   for (const [field, body] of Object.entries(src.contract_terms || {})) {
-    docs[tierFor(body.visibility, `${brand}.contract_terms.${field}`)].contract_terms[field] = body;
+    const tier = tierFor(body.visibility, `${brand}.contract_terms.${field}`);
+    docs[tier].contract_terms[field] = body;
+    contract_field_index.push({ name: field, tier: tier === ECONOMIC ? "economic" : "operational" });
   }
+  docs[OPERATIONAL].contract_field_index = contract_field_index;
   return { brand, docs };
 }
 

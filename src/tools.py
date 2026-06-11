@@ -22,6 +22,71 @@ from .store import AccountStore
 _OVERVIEW_SECTIONS = ("profile", "orders", "open_issues", "last_contact")
 
 
+def compose_briefing(brand: str, role: str, brand_name: str,
+                     overview: dict, ov_withheld: list,
+                     served_terms: dict, term_withheld: list) -> dict:
+    """Deterministically render the pre-call brief from ALREADY-FILTERED data.
+
+    Pure and backend-agnostic: it takes only entitled (served) data plus the withheld
+    manifests, so it can never leak a value it wasn't handed. Day 1's local tools and
+    F4's Firebase tools both call this, so the brief is byte-identical across the two
+    substrates — the governance guarantee does not depend on where the data was read.
+    `served_terms` must be ordered (source order) by the caller; iteration order here
+    is its order.
+    """
+    lines: list[str] = []
+    lines.append(f"PRE-CALL BRIEFING — {brand_name} (access level: {role})")
+    lines.append("")
+
+    profile = overview.get("profile")
+    if profile:
+        lines.append(f"Profile: {profile.get('segment')} — {profile.get('status')}")
+
+    orders = overview.get("orders")
+    if orders:
+        lines.append("")
+        lines.append("Open / recent orders:")
+        for o in orders.get("items", []):
+            lines.append(
+                f"  - {o['po']}: {o['qty_lm']} lm {o['material']} ({o['colorway']}), "
+                f"{o['status']}, ship {o['ship_date']}"
+            )
+
+    issues = overview.get("open_issues")
+    if issues:
+        lines.append("")
+        lines.append("Open issues:")
+        for it in issues.get("items", []):
+            lines.append(f"  - [{it['severity']}] {it['ticket']}: {it['summary']}")
+
+    last = overview.get("last_contact")
+    if last:
+        lines.append("")
+        lines.append(f"Last contact ({last.get('date')}, {last.get('channel')}): "
+                     f"{last.get('summary')}")
+
+    if served_terms:
+        lines.append("")
+        lines.append("Contract terms (entitled):")
+        for field, value in served_terms.items():
+            lines.append(f"  - {field.replace('_', ' ')}: {value}")
+
+    # Withheld fields are named and flagged — never silently dropped, never invented.
+    if term_withheld:
+        withheld_names = ", ".join(w["field"].replace("_", " ") for w in term_withheld)
+        lines.append("")
+        lines.append(f"The following contract terms exist but are withheld at your "
+                     f"access level: {withheld_names}.")
+
+    return {
+        "brand": brand,
+        "role": role,
+        "briefing": "\n".join(lines),
+        "served_terms": list(served_terms.keys()),
+        "withheld": [w for w in term_withheld] + [w for w in ov_withheld],
+    }
+
+
 class GovernedTools:
     def __init__(self, store: AccountStore, principal: Principal, audit=None) -> None:
         self.store = store
@@ -102,58 +167,8 @@ class GovernedTools:
         served_terms, term_withheld = self._gather_contract_terms()
         acct = self._account()
         brand_name = acct.get("brand_name", self.principal.brand)
-
-        lines: list[str] = []
-        lines.append(f"PRE-CALL BRIEFING — {brand_name} (access level: {self.principal.role})")
-        lines.append("")
-
-        profile = overview.get("profile")
-        if profile:
-            lines.append(f"Profile: {profile.get('segment')} — {profile.get('status')}")
-
-        orders = overview.get("orders")
-        if orders:
-            lines.append("")
-            lines.append("Open / recent orders:")
-            for o in orders.get("items", []):
-                lines.append(
-                    f"  - {o['po']}: {o['qty_lm']} lm {o['material']} ({o['colorway']}), "
-                    f"{o['status']}, ship {o['ship_date']}"
-                )
-
-        issues = overview.get("open_issues")
-        if issues:
-            lines.append("")
-            lines.append("Open issues:")
-            for it in issues.get("items", []):
-                lines.append(f"  - [{it['severity']}] {it['ticket']}: {it['summary']}")
-
-        last = overview.get("last_contact")
-        if last:
-            lines.append("")
-            lines.append(f"Last contact ({last.get('date')}, {last.get('channel')}): "
-                         f"{last.get('summary')}")
-
-        if served_terms:
-            lines.append("")
-            lines.append("Contract terms (entitled):")
-            for field, value in served_terms.items():
-                lines.append(f"  - {field.replace('_', ' ')}: {value}")
-
-        # Withheld fields are named and flagged — never silently dropped, never invented.
-        if term_withheld:
-            withheld_names = ", ".join(w["field"].replace("_", " ") for w in term_withheld)
-            lines.append("")
-            lines.append(f"The following contract terms exist but are withheld at your "
-                         f"access level: {withheld_names}.")
-
-        return {
-            "brand": self.principal.brand,
-            "role": self.principal.role,
-            "briefing": "\n".join(lines),
-            "served_terms": list(served_terms.keys()),
-            "withheld": [w for w in term_withheld] + [w for w in ov_withheld],
-        }
+        return compose_briefing(self.principal.brand, self.principal.role, brand_name,
+                                overview, ov_withheld, served_terms, term_withheld)
 
     def share_briefing(self, channel: str) -> dict:
         # Stub for this phase. External writes pause for human approval (Phase 3).
