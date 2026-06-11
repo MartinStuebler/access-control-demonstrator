@@ -1,0 +1,3 @@
+# Web FACE only — the presentation layer. The governed backend (src/) has no web deps.
+# Install into the project venv:  pip install -r web/requirements.txt
+flask>=3.0
