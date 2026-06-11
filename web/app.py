@@ -54,6 +54,66 @@ def _withheld_names(withheld: list) -> list[str]:
     return names
 
 
+def _detect_rival(text: str, bound_brand: str) -> str | None:
+    """Routing ONLY: does the typed text gesture at another brand / a competitor? If so,
+    return a rival brand id so the caller can run the REAL decide() probe against it.
+
+    This NEVER decides access and NEVER fabricates a refusal — it only chooses whether to
+    *ask* the policy engine about a rival. The answer is always decide()'s real result.
+    It matches other brands by id or display name, or generic words like 'competitor'."""
+    t = (text or "").lower()
+    others = [b for b in _store.list_brands() if b != bound_brand]
+    # Direct reference to a specific other brand (by id or display name) -> that one.
+    for b in others:
+        if b.lower() in t or _brand_name(b).lower() in t:
+            return b
+    # Generic adversarial gesture at "the competition" -> the first rival, to show refusal.
+    if any(w in t for w in ("competitor", "competitors", "rival", "other brand",
+                            "their data", "the other", "everyone", "all brands")):
+        return others[0] if others else None
+    return None
+
+
+def _attack_evidence(principal: Principal, query: str, withheld_names: list[str]) -> list[dict]:
+    """Build the 'why this held' evidence for an adversarial request — drawn ENTIRELY from
+    real backend results (the governed withheld manifest + a real decide() probe), never
+    hardcoded. Carries field NAMES and refusal reasons only, never any withheld value."""
+    evidence: list[dict] = []
+
+    # (a) Tier evidence: the economic fields this role does not get, by NAME, from the
+    #     governed manifest the brief already produced. (No value is ever included.)
+    if withheld_names:
+        evidence.append({
+            "kind": "tier_withheld",
+            "requested_brand": principal.brand,
+            "role": principal.role,
+            "withheld_fields": withheld_names,
+            "message": (f"{len(withheld_names)} field(s) withheld at role "
+                        f"{principal.role}: {', '.join(withheld_names)} "
+                        f"(names shown; values never left the server)."),
+        })
+
+    # (b) Cross-brand evidence: only if the text gestures at a rival. The refusal is the
+    #     REAL decide() result; the rival's account is never read (decide() blocks at the
+    #     tenancy gate before any store access), so rival_accessed is structurally false.
+    rival = _detect_rival(query, principal.brand)
+    if rival:
+        d = decide(principal, rival, "public", _store.get_entitlements())
+        evidence.append({
+            "kind": "cross_brand",
+            "bound_brand": principal.brand,
+            "requested_brand": rival,
+            "requested_brand_name": _brand_name(rival),
+            "refused": not d.allowed,
+            "code": d.code,
+            "reason": d.reason,
+            "rival_accessed": False,
+            "message": (f"cross-brand read of {_brand_name(rival)} "
+                        f"refused: {d.code} (rival brand never accessed)."),
+        })
+    return evidence
+
+
 @app.get("/")
 def index():
     return render_template("index.html", brands=_brands(), roles=VALID_ROLES)
@@ -81,12 +141,19 @@ def api_brief():
     terms = tools.get_contract_terms()            # served {field: value}, withheld names
     brief = tools.draft_briefing()                # rendered text (served + withheld names)
 
+    term_withheld_names = _withheld_names(terms["withheld"])   # NAMES ONLY
+
     # The response is assembled from served + names ONLY. No raw account is touched.
+    # `bound` echoes the principal so the viewer sees it came from the SELECTORS — the
+    # typed `query` never sets brand/role. `evidence` explains an adversarial request
+    # using only real backend results (withheld names + a real decide() probe).
     return jsonify({
         "brand": brand,
         "brand_name": _brand_name(brand),
         "role": role,
         "query": query,
+        "bound": {"brand": principal.brand, "role": principal.role,
+                  "source": "selectors (the typed text cannot change this)"},
         "briefing": brief["briefing"],            # already contains no withheld value
         "overview": {
             "served": overview["served"],         # entitled sections
@@ -94,8 +161,9 @@ def api_brief():
         },
         "contract_terms": {
             "served": terms["served"],            # entitled {field: value}
-            "withheld": _withheld_names(terms["withheld"]),   # NAMES ONLY
+            "withheld": term_withheld_names,
         },
+        "evidence": _attack_evidence(principal, query, term_withheld_names),
     })
 
 
