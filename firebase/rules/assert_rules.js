@@ -2,10 +2,10 @@
 //
 // Asserts every (role, brand, tier) read combination — allows AND denies — plus the
 // cross-brand block, cross-tier block, unauthenticated, no-claims, unknown-role
-// (fail-closed), and client-write denials. The rules under test are the REAL
-// firestore.rules file. Self-contained: seeds its own docs with rules disabled, so it
-// does not depend on F2's migration having run. Prints the full matrix; exits non-zero
-// on any miss. 78 assertions total.
+// (fail-closed), client-write denials, and (F5) the audit collection being closed to
+// every client write AND delete. The rules under test are the REAL firestore.rules file.
+// Self-contained: seeds its own docs with rules disabled, so it does not depend on F2's
+// migration having run. Prints the full matrix; exits non-zero on any miss. 80 assertions.
 
 const fs = require("fs");
 const path = require("path");
@@ -14,9 +14,13 @@ const {
   assertSucceeds,
   assertFails,
 } = require("@firebase/rules-unit-testing");
-const { doc, getDoc, setDoc } = require("firebase/firestore");
+const { doc, getDoc, setDoc, deleteDoc } = require("firebase/firestore");
 
-const PROJECT = "demo-access-control";
+// Isolated project namespace: rules-unit-testing seeds its own throwaway docs with rules
+// disabled. Using a SEPARATE project id keeps those seeds out of the real
+// `demo-access-control` datastore, so running this suite never clobbers the migrated
+// account docs the agent + verifiers read. (The emulator multiplexes projects by id.)
+const PROJECT = "demo-rules-test";
 const HOST = "127.0.0.1";
 const PORT = 8080;
 
@@ -126,6 +130,21 @@ async function expectWriteDenied(db, label, tier, targetBrand) {
     for (const tier of Object.keys(TIERS))
       for (const target of BRANDS)
         await expectWriteDenied(db, "[legal@brand_a]", tier, target);
+  }
+
+  // (7) F5 — the audit collection is closed to every CLIENT write AND delete. A fully
+  // valid token still cannot append a forged line or erase one; only the Admin-path
+  // log_audit Function (which bypasses rules) can write. This is what makes it evidence.
+  lines.push("\n-- audit collection: client write + delete both denied (append-only via Admin) --");
+  {
+    const db = env.authenticatedContext("legal-brand_a", { brand: "brand_a", role: "legal" }).firestore();
+    const ref = doc(db, "audit", "forged_entry");
+    let okW = true;
+    try { await assertFails(setDoc(ref, { event: "forged", brand: "brand_b" })); } catch (_) { okW = false; }
+    record("[legal@brand_a] write audit/forged_entry -> DENY", okW);
+    let okD = true;
+    try { await assertFails(deleteDoc(ref)); } catch (_) { okD = false; }
+    record("[legal@brand_a] delete audit/forged_entry -> DENY", okD);
   }
 
   console.log(lines.join("\n"));

@@ -13,6 +13,7 @@ sign-in uses the throwaway demo password. Nothing here can touch a real project.
 from __future__ import annotations
 
 import json
+import sys
 import urllib.request
 import urllib.error
 
@@ -82,13 +83,35 @@ def call_function(name: str, id_token: str, data: dict | None = None) -> dict:
     return body.get("result", {})
 
 
+class FirestoreAuditSink:
+    """The firebase-mode audit sink: each record is appended to the Firestore `audit`
+    collection through the Admin-path `log_audit` Function (verified token, server-stamped
+    identity, append-only). A client cannot write `audit` directly — the F3 rules deny it —
+    so this Function is the only path. Holds the run's signed token; identity on the stored
+    line is re-derived server-side from that token, never from the record we send.
+
+    Warn-but-don't-abort: an audit write failure prints a loud `[audit] WARN` to stderr (an
+    evidence failure is never swallowed) but does not crash the brief — the run still
+    completes and the operator sees the gap."""
+
+    def __init__(self, id_token: str) -> None:
+        self._id_token = id_token
+
+    def __call__(self, record: dict) -> None:
+        try:
+            call_function("log_audit", self._id_token, {"record": record})
+        except FirebaseFunctionError as e:
+            print(f"[audit] WARN: event {record.get('event')!r} not written to Firestore "
+                  f"audit ({e.status}: {e.message})", file=sys.stderr)
+
+
 class FunctionsTools:
     """Firebase-mode replacement for GovernedTools. Same dispatch() surface; every read
     goes through a Cloud Function that verifies the token and reads only entitled tiers.
     draft_briefing composes from the served outputs (already-filtered data), and
     share_briefing stays the same non-sending stub. The model sees no brand/role param."""
 
-    def __init__(self, brand: str, role: str) -> None:
+    def __init__(self, brand: str, role: str, audit=None) -> None:
         email = ACCOUNT_EMAILS.get((brand, role))
         if email is None:
             raise KeyError(f"no seeded Firebase identity for ({brand!r}, {role!r})")
@@ -97,6 +120,7 @@ class FunctionsTools:
         self.email = email
         self._id_token = sign_in(email)  # one sign-in per run; identity is now the token
         self._brand_name: str | None = None
+        self.audit = audit  # when set, each tool call is logged (Firestore sink in cli.py)
 
     # --- read tools (Cloud Functions) --------------------------------------
 
@@ -149,16 +173,37 @@ class FunctionsTools:
     def dispatch(self, name: str, tool_input: dict) -> dict:
         try:
             if name == "get_account_overview":
-                return self.get_account_overview()
-            if name == "get_contract_terms":
-                return self.get_contract_terms()
-            if name == "search_account_notes":
-                return self.search_account_notes(tool_input.get("query", ""))
-            if name == "draft_briefing":
-                return self.draft_briefing()
-            if name == "share_briefing":
-                return self.share_briefing(tool_input.get("channel", ""))
-            return {"error": f"unknown tool: {name}"}
+                out = self.get_account_overview()
+            elif name == "get_contract_terms":
+                out = self.get_contract_terms()
+            elif name == "search_account_notes":
+                out = self.search_account_notes(tool_input.get("query", ""))
+            elif name == "draft_briefing":
+                out = self.draft_briefing()
+            elif name == "share_briefing":
+                out = self.share_briefing(tool_input.get("channel", ""))
+            else:
+                return {"error": f"unknown tool: {name}"}
         except FirebaseFunctionError as e:
             # A Function refusal surfaces as a tool error the agent can read, never as data.
             return {"error": e.message, "status": e.status}
+
+        if self.audit is not None:
+            self._audit(name, out)
+        return out
+
+    def _audit(self, name: str, out: dict) -> None:
+        # Identical served/withheld normalization to GovernedTools._audit, so a Firebase-mode
+        # tool_call line is the same shape as a Day 1 one — the substrate is all that changed.
+        if name == "share_briefing":
+            self.audit.external_write_pending(name, out.get("destination", ""))
+            return
+        if isinstance(out.get("served"), dict):
+            served = list(out["served"].keys())
+        elif "served_terms" in out:
+            served = list(out["served_terms"])
+        elif "matches" in out:
+            served = [m.get("id") for m in out["matches"]]
+        else:
+            served = []
+        self.audit.tool_call(name, served, out.get("withheld", []))

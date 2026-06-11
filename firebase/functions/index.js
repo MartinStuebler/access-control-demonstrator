@@ -120,3 +120,40 @@ exports.search_account_notes = onCall(async (request) => {
     .map((it) => ({ id: it.id, text: it.text }));
   return { brand: p.brand, matches, withheld: [] };
 });
+
+// F5 — the audit sink as an Admin-path callable Function.
+//
+// The audit log is evidence only if a client cannot forge or erase it. A client
+// (the Python backend signs in as an ordinary seeded user) holds only client
+// privileges, and the F3 rules deny EVERY client write to `audit` — so the only way
+// to append is through this Function, which writes with the Admin SDK (bypassing
+// rules), the same discipline as seed/migrate. Two integrity guarantees:
+//
+//   1. IDENTITY IS SERVER-AUTHORITATIVE. `brand`/`role`/`ts` on the stored document are
+//      stamped from the VERIFIED token (and the server clock), never from request.data.
+//      A caller cannot attribute an audit line to another brand/role or backdate it; the
+//      client-sent values for those three keys are dropped. The event payload (tool,
+//      served, withheld, run_id, …) is the caller's report of what it did.
+//   2. APPEND-ONLY. This Function only ever .add()s a new document. There is NO update or
+//      delete Function anywhere, and the rules deny client update/delete — so once
+//      written, an entry cannot be mutated or removed through any path.
+//
+// Fail-closed: principalFrom() rejects unauthenticated, no-claims, and unknown-role
+// callers, so none of them can write a line (ties to F1 + F3).
+exports.log_audit = onCall(async (request) => {
+  const p = principalFrom(request);
+  const record = (request.data && request.data.record) || {};
+  if (typeof record.event !== "string" || !record.event) {
+    throw new HttpsError("invalid-argument", "audit record needs an 'event' string.");
+  }
+  // Drop client-supplied identity/time; the server is authoritative for these three.
+  const { ts, brand, role, ...payload } = record;
+  const docData = {
+    ...payload,                       // run_id, event, and event-specific fields
+    brand: p.brand,                   // from the verified token, not the client
+    role: p.role,                     // from the verified token, not the client
+    ts: new Date().toISOString(),     // server clock, not the client's
+  };
+  const ref = await db.collection("audit").add(docData);
+  return { ok: true, id: ref.id };
+});

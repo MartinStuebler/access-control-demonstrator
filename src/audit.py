@@ -1,13 +1,17 @@
-"""Append-only, human-readable audit log (JSONL).
+"""Append-only audit log — one interface, two sinks.
 
-One sink, `audit/audit.jsonl`, that every run appends to. Each line is one event,
-stamped with the run id and the bound (brand, role) scope. The audit log is the
-demo's evidence: for a Brand-B run it shows every tool call scoped to brand_b and
-nothing else, which is what proves no cross-brand access happened.
+Each event is one record, stamped with the run id and the bound (brand, role) scope.
+The audit log is the demo's evidence: for a Brand-B run it shows every tool call scoped
+to brand_b and nothing else, which is what proves no cross-brand access happened.
 
-This maps 1:1 to the production design (PRD §9: an audit sink exported to a SIEM)
-and to the Firebase upgrade (a Firestore `audit` collection, append-only via Cloud
-Functions). The interface here is the seam the Firebase backend slots into.
+Two sinks, selected by the active backend (the record shape is identical in both):
+  - local mode  -> JSONL append to `audit/audit.jsonl` (the Day 1 default).
+  - firebase    -> a Firestore `audit` collection, written via the Admin-path
+    `log_audit` Function (see src/fb_backend.py). An injected `sink` callable swaps the
+    destination; the record assembly here is unchanged. This maps 1:1 to PRD §17.1.
+
+The `sink` seam is the only difference between the two backends — the events, fields,
+and ordering are written once, here.
 """
 from __future__ import annotations
 
@@ -26,12 +30,24 @@ def _now_iso() -> str:
 
 class AuditLog:
     def __init__(self, principal: Principal, path: Path | None = None,
-                 run_id: str | None = None, clock=_now_iso) -> None:
+                 run_id: str | None = None, clock=_now_iso, sink=None) -> None:
         self.principal = principal
-        self.path = Path(path) if path else config.AUDIT_DIR / "audit.jsonl"
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.run_id = run_id or f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
         self._clock = clock
+        # Default sink = JSONL append (Day 1, unchanged). A caller may inject a different
+        # sink (e.g. the Firestore Admin-path sink in firebase mode); the record assembly
+        # below is identical either way. self.path is only meaningful for the JSONL sink.
+        if sink is None:
+            self.path = Path(path) if path else config.AUDIT_DIR / "audit.jsonl"
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._sink = self._jsonl_sink
+        else:
+            self.path = None
+            self._sink = sink
+
+    def _jsonl_sink(self, record: dict) -> None:
+        with self.path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
 
     def _write(self, event: str, **fields) -> None:
         record = {
@@ -42,8 +58,7 @@ class AuditLog:
             "role": self.principal.role,
             **fields,
         }
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
+        self._sink(record)
 
     # --- run boundaries ----------------------------------------------------
 

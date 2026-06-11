@@ -46,6 +46,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Audit collection (F5): append-only EVIDENCE, written only by the Admin path (the
+    // log_audit Function via the Admin SDK, which bypasses rules). For every CLIENT:
+    //   - write: if false  denies create, update, AND delete (Firestore folds all three
+    //     into `write`) — a client can neither append a forged line nor erase one.
+    //   - read: if false   the trail is operator evidence, shown via the Admin console,
+    //     not a user-facing collection.
+    // This is what makes the log tamper-evident: no client path can touch it.
+    match /audit/{entry} {
+      allow read: if false;
+      allow write: if false;
+    }
+
     // Explicit default-deny for everything else.
     match /{document=**} {
       allow read, write: if false;
