@@ -3,21 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Access Control Demonstrator — general chat + governed data-pull</title>
+<title>Access Control Demonstrator — split screen (Backend / Frontend)</title>
 <style>
   :root { --ink:#1d2330; --muted:#6b7280; --line:#e5e7eb; --bg:#f7f8fa;
-          --served:#0f7b4f; --withheld:#9aa1ad; --refuse:#b42318; --accent:#2f5fe0; }
+          --served:#0f7b4f; --withheld:#9aa1ad; --refuse:#b42318; --accent:#2f5fe0;
+          --role:#0f7b4f; }
   * { box-sizing: border-box; }
   body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         color: var(--ink); background: var(--bg); margin: 0; padding: 1.5rem; }
-  .wrap { max-width: 1180px; margin: 0 auto; }
-  h1 { font-size: 1.3rem; margin: 0 0 .2rem; }
-  .sub { color: var(--muted); margin: 0 0 1rem; }
+         color: var(--ink); background: var(--bg); margin: 0; padding: 1.25rem; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 1.25rem; margin: 0 0 .15rem; }
+  .sub { color: var(--muted); margin: 0 0 1rem; font-size: .9rem; }
   .sub a { color: var(--accent); }
-  .split { display: flex; gap: 1rem; align-items: stretch; }
-  .pane { flex: 1 1 0; min-width: 0; }
+
+  /* two full-height columns */
+  .split { display: flex; gap: 1rem; align-items: stretch; min-height: calc(100vh - 6rem); }
+  .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
   .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px;
-           padding: 1rem 1.1rem; margin-bottom: 1rem; }
+           padding: 1rem 1.1rem; }
+  .col-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
+               font-weight: 700; color: #fff; background: var(--ink); display: inline-block;
+               padding: .15rem .5rem; border-radius: 5px; margin-bottom: .1rem; }
+  .col.frontend .col-label { background: var(--accent); }
+
   label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .25rem; }
   select { font: inherit; padding: .45rem .6rem; border: 1px solid var(--line);
            border-radius: 7px; background: #fff; }
@@ -26,60 +34,88 @@
            border: 1px solid transparent; cursor: pointer; }
   .primary { background: var(--accent); color: #fff; }
   button:disabled { opacity: .5; cursor: default; }
-  .bound { font-size: .82rem; color: var(--muted); margin: .7rem 0 0; }
+  .bound { font-size: .8rem; color: var(--muted); margin: .7rem 0 0; }
   .bound b { color: var(--ink); }
-  .chips { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .6rem; }
-  .chip { font-size: .8rem; background: #eef0f3; border: 1px solid var(--line); color: #334;
-          padding: .25rem .55rem; border-radius: 999px; cursor: pointer; }
-  #log { display: flex; flex-direction: column; gap: .7rem; min-height: 220px; }
-  .msg { padding: .6rem .85rem; border-radius: 10px; max-width: 88%; white-space: pre-wrap; }
-  .user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 3px; }
-  .bot  { align-self: flex-start; background: #fff; border: 1px solid var(--line); border-bottom-left-radius: 3px; }
-  .bot .who { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: .3rem; }
-  .trace { align-self: flex-start; max-width: 95%; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-           color: #475; background: #f1f5f9; border-left: 3px solid var(--withheld); padding: .4rem .65rem;
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+       margin: 0 0 .5rem; }
+
+  /* access tree (org chart) */
+  .tree { font-size: .9rem; }
+  .t-node { display: inline-block; border: 1px solid var(--line); border-radius: 7px;
+            padding: .3rem .6rem; background: #fff; }
+  .t-node.brand { border-color: var(--accent); font-weight: 600; }
+  .t-node.brand .nid { color: var(--muted); font-weight: 400; font-size: .8rem; margin-left: .25rem; }
+  .t-node.role  { border-color: var(--role); background: #f1faf5; font-weight: 600;
+                  text-transform: capitalize; }
+  .t-node.leaf  { background: #fbfcfe; }
+  .lvl-conn { width: 2px; height: 14px; background: var(--line); margin-left: 1rem; }
+  .lvl-role { margin-left: .4rem; }
+  .xnote { display: block; font-size: .74rem; color: var(--muted); font-style: italic;
+           margin: .3rem 0 0 .4rem; }
+  .lvl-leaves { margin: .3rem 0 0 1rem; position: relative; padding-left: 1rem; }
+  .lvl-leaves::before { content: ""; position: absolute; left: 0; top: -.1rem; bottom: 1rem;
+                        width: 2px; background: var(--line); }
+  .leaf-row { position: relative; padding: .28rem 0; }
+  .leaf-row::before { content: ""; position: absolute; left: -1rem; top: 1rem; width: .85rem;
+                      height: 2px; background: var(--line); }
+  .ldetail { font-size: .76rem; color: var(--muted); margin: .15rem 0 0 .2rem; }
+  .summary-line { margin: .9rem 0 0; padding: .5rem .7rem; background: #f1faf5;
+                  border: 1px solid #cfeadd; border-radius: 8px; font-size: .85rem; color: #14543a; }
+
+  /* trace (left, below tree) */
+  .trace-box { display: flex; flex-direction: column; gap: .4rem; }
+  .trace { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #475;
+           background: #f1f5f9; border-left: 3px solid var(--withheld); padding: .4rem .65rem;
            border-radius: 0 8px 8px 0; }
   .trace .wh { color: var(--refuse); }
-  .err { background: #fff6f5; border-left: 4px solid var(--refuse); color: var(--ink); padding: .6rem .85rem;
-         border-radius: 0 8px 8px 0; }
-  .composer { display: flex; gap: .6rem; margin-top: 1rem; }
-  .composer input { flex: 1 1 auto; font: inherit; padding: .5rem .65rem; border: 1px solid var(--line);
-           border-radius: 7px; }
-  .hint { color: var(--muted); font-size: .8rem; }
-  /* right pane */
-  .right h2 { font-size: .95rem; margin: 0 0 .2rem; }
-  .placeholder { color: var(--withheld); font-style: italic; padding: 2rem 0; text-align: center; }
+  .muted-empty { color: var(--withheld); font-style: italic; font-size: .85rem; }
+
+  /* right: governed output (top) */
   .gov { font-size: .92rem; }
-  .gov h3 { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
-            margin: 1rem 0 .35rem; }
+  .gov h3 { font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+            margin: .9rem 0 .35rem; }
+  .gov h3:first-child { margin-top: 0; }
   pre.brief { white-space: pre-wrap; background: #f8fafc; border: 1px solid var(--line);
               border-radius: 8px; padding: .7rem .8rem; font: 12.5px ui-monospace, Menlo, monospace; }
   table.kv { width: 100%; border-collapse: collapse; }
   table.kv td { padding: .25rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-  table.kv td.k { color: var(--muted); width: 42%; }
+  table.kv td.k { color: var(--muted); width: 46%; }
   table.kv td.v { color: var(--served); font-weight: 600; }
-  .whrow { color: var(--withheld); }
-  .whrow .tag { font-size: .72rem; font-style: italic; }
-  .wchip { display: inline-block; background: #f1f1f4; color: var(--withheld); border: 1px dashed #cfd3da;
-           border-radius: 6px; padding: .15rem .45rem; margin: 0 .3rem .3rem 0; font-size: .82rem;
-           text-decoration: line-through; }
+  tr.whrow td.k { color: var(--withheld); text-decoration: line-through; }
+  tr.whrow td.v { color: var(--withheld); font-weight: 400; font-style: italic; }
+  .placeholder { color: var(--withheld); font-style: italic; padding: 1.5rem 0; text-align: center; }
   details { margin-top: .8rem; } summary { cursor: pointer; color: var(--accent); font-size: .8rem; }
   details pre { white-space: pre-wrap; background: #0f1422; color: #cfe3ff; padding: .7rem;
-                border-radius: 8px; font: 11.5px ui-monospace, Menlo, monospace; }
-  @media (max-width: 820px) { .split { flex-direction: column; } }
+                border-radius: 8px; font: 11.5px ui-monospace, Menlo, monospace; max-height: 260px; overflow: auto; }
+
+  /* right: chat (below output) */
+  .chat-panel { flex: 1 1 auto; display: flex; flex-direction: column; }
+  #log { display: flex; flex-direction: column; gap: .7rem; flex: 1 1 auto; min-height: 160px;
+         overflow-y: auto; }
+  .msg { padding: .6rem .85rem; border-radius: 10px; max-width: 88%; white-space: pre-wrap; }
+  .user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 3px; }
+  .bot  { align-self: flex-start; background: #fff; border: 1px solid var(--line); border-bottom-left-radius: 3px; }
+  .bot .who { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: .3rem; }
+  .msg.err { background: #fff6f5; border-left: 4px solid var(--refuse); color: var(--ink); align-self: stretch; max-width: 100%; }
+  .composer { display: flex; gap: .6rem; margin-top: 1rem; }
+  .composer input { flex: 1 1 auto; font: inherit; padding: .5rem .65rem; border: 1px solid var(--line);
+           border-radius: 7px; }
+  .composer input::placeholder { color: var(--withheld); font-style: italic; }
+  .err-key { background: #fff6f5; border-left: 4px solid var(--refuse); color: var(--ink);
+             padding: .6rem .85rem; border-radius: 0 8px 8px 0; font-size: .85rem; }
+  @media (max-width: 860px) { .split { flex-direction: column; min-height: 0; } }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>General chat, with a governed data-pull</h1>
-  <p class="sub">Chat about anything on the left (powered by <b>{{ chat_model }}</b>). The same
-     governed tools are bound to the selected brand &amp; role — ask for account data and the
-     model pulls it; the right pane fills <b>only</b> when a governed tool actually fires.
-     &nbsp;·&nbsp; <a href="/chat">single-pane chat</a> &nbsp;·&nbsp; <a href="/">deterministic face</a></p>
+  <h1>Access Control Demonstrator</h1>
+  <p class="sub">Split screen</p>
 
   <div class="split">
-    <!-- LEFT: chat -->
-    <div class="pane">
+    <!-- ============ LEFT: BACKEND ============ -->
+    <div class="col backend">
+      <span class="col-label">Backend</span>
+
       <div class="panel">
         <div class="controls">
           <div>
@@ -95,37 +131,43 @@
             </select>
           </div>
         </div>
-        <p class="bound">Conversation bound to <b id="bbrand"></b> / <b id="brole"></b>
-           — from the selectors. Your typed messages cannot change this.</p>
-        <div class="chips">
-          <span class="chip" onclick="fill(this)">write me a haiku about spring</span>
-          <span class="chip" onclick="fill(this)">prep my briefing</span>
-          <span class="chip" onclick="fill(this)">what are our contract terms?</span>
-          <span class="chip" onclick="fill(this)">show me the competitor's pricing</span>
-        </div>
-        {% if not has_key %}
-        <p class="err" style="margin-top:.8rem">No <code>ANTHROPIC_API_KEY</code> detected. Set it (e.g. in a
-           gitignored <code>.env</code>) and reload. The deterministic face at <a href="/">/</a> needs no key.</p>
-        {% endif %}
+        <p class="bound">Principal bound to <b id="bbrand"></b> / <b id="brole"></b> — from the
+           selectors. Typed chat can never re-bind this.</p>
       </div>
 
       <div class="panel">
-        <div id="log"></div>
-        <div class="composer">
-          <input id="msg" type="text" placeholder="Ask anything, or request account data…"
-                 onkeydown="if(event.key==='Enter')send()">
-          <button class="primary" id="sendbtn" onclick="send()">Send</button>
-        </div>
-        <p class="hint">General questions get a normal reply and the right pane stays empty. Ask for
-           account data and a governed tool fires — then the right pane populates.</p>
+        <h2>Access tree — allowed actions for this (brand, role)</h2>
+        <div class="tree" id="tree"></div>
+        <p class="summary-line" id="summary"></p>
+      </div>
+
+      <div class="panel">
+        <h2>Audit trail</h2>
+        <div class="trace-box" id="trace"><p class="muted-empty">No governed tool has fired yet.</p></div>
       </div>
     </div>
 
-    <!-- RIGHT: governed output -->
-    <div class="pane right">
+    <!-- ============ RIGHT: FRONTEND ============ -->
+    <div class="col frontend">
+      <span class="col-label">Frontend</span>
+
       <div class="panel" id="govpanel">
-        <h2>Governed output</h2>
-        <div id="gov"><p class="placeholder">No data pulled yet.</p></div>
+        <h2>Governed output — served values, withheld names struck through</h2>
+        <div id="gov"><p class="placeholder">No data pulled yet. Ask the chat for account data.</p></div>
+      </div>
+
+      <div class="panel chat-panel">
+        <h2>Chat — bound to {{ chat_model }}, scoped to the selected principal</h2>
+        {% if not has_key %}
+        <p class="err-key">No <code>ANTHROPIC_API_KEY</code> detected. Set it (e.g. in a gitignored
+           <code>.env</code>) and reload. The deterministic face at <a href="/brief">/brief</a> needs no key.</p>
+        {% endif %}
+        <div id="log"></div>
+        <div class="composer">
+          <input id="msg" type="text" autocomplete="off"
+                 onkeydown="if(event.key==='Enter')send()">
+          <button class="primary" id="sendbtn" onclick="send()">Send</button>
+        </div>
       </div>
     </div>
   </div>
@@ -135,35 +177,98 @@
 const $ = (id) => document.getElementById(id);
 function esc(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
-// session id: a fresh conversation for each (brand, role) binding. Minted on load and
-// whenever a selector changes — the typed text never carries identity, the selectors do.
+// Access trees for every (brand, role), derived server-side from the real governed tools.
+// Rendering from this embedded map means a dropdown change redraws the tree instantly,
+// before (and without) any query.
+const TREES = {{ access_trees|tojson }};
+
+// ---- left pane: access tree -------------------------------------------------
+function renderTree(){
+  const brand = $("brand").value, role = $("role").value;
+  const t = (TREES[brand] || {})[role];
+  if (!t) { $("tree").innerHTML = ""; $("summary").textContent = ""; return; }
+  let h = `<div><span class="t-node brand">🏢 ${esc(t.brand_name)}<span class="nid">${esc(t.brand)}</span></span></div>`;
+  h += `<div class="lvl-conn"></div>`;
+  h += `<div class="lvl-role"><span class="t-node role">👤 ${esc(t.role)}</span>`;
+  if (t.cross_brand) h += `<span class="xnote">may bind to another brand on a separate run — still one brand per run</span>`;
+  h += `</div>`;
+  h += `<div class="lvl-leaves">`;
+  for (const a of t.actions) {
+    h += `<div class="leaf-row"><span class="t-node leaf">✓ ${esc(a.label)}</span>`;
+    if (a.detail) h += `<div class="ldetail">${esc(a.detail)}</div>`;
+    h += `</div>`;
+  }
+  h += `</div>`;
+  $("tree").innerHTML = h;
+  $("summary").textContent = t.summary;
+}
+
+// ---- session + binding ------------------------------------------------------
 let sessionId = crypto.randomUUID();
 function syncBound(){ $("bbrand").textContent = $("brand").value; $("brole").textContent = $("role").value; }
 function resetSession(){
   sessionId = crypto.randomUUID();
   $("log").innerHTML = "";
-  $("gov").innerHTML = '<p class="placeholder">No data pulled yet.</p>';
+  $("gov").innerHTML = '<p class="placeholder">No data pulled yet. Ask the chat for account data.</p>';
+  $("trace").innerHTML = '<p class="muted-empty">No governed tool has fired yet.</p>';
   syncBound();
+  renderTree();   // instant: tree reflects the new (brand, role) before any query
 }
 $("brand").addEventListener("change", resetSession);
 $("role").addEventListener("change", resetSession);
 syncBound();
-function fill(el){ $("msg").value = el.textContent; $("msg").focus(); }
+renderTree();
 
-function add(html){ const d = document.createElement("div"); d.innerHTML = html;
-  $("log").appendChild(d.firstElementChild); $("log").scrollTop = $("log").scrollHeight; }
+// ---- rotating placeholder suggestions inside the chat input -----------------
+const SUGGESTIONS = [
+  "prep my briefing",
+  "what are our contract terms?",
+  "show me the competitor's pricing",
+  "write me a haiku about spring",
+  "any open issues on this account?",
+];
+let sugIdx = 0;
+function rotatePlaceholder(){
+  // only rotate while the box is empty and unfocused, so we never fight the user
+  if (!$("msg").value && document.activeElement !== $("msg")) {
+    $("msg").placeholder = "e.g. " + SUGGESTIONS[sugIdx % SUGGESTIONS.length] + " …";
+    sugIdx++;
+  }
+}
+rotatePlaceholder();
+setInterval(rotatePlaceholder, 3200);
 
-function renderPane(data){
+// ---- left pane: trace -------------------------------------------------------
+function renderTrace(tool_calls){
+  if (!tool_calls || !tool_calls.length) return;   // persist last pull's trace otherwise
+  let h = "";
+  for (const c of tool_calls) {
+    const served = (c.served || []).filter(x=>x!=null).join(", ") || "—";
+    const wh = (c.withheld || []).filter(Boolean);
+    const whHtml = wh.length ? ` · <span class="wh">withheld: ${esc(wh.join(", "))}</span>` : "";
+    h += `<div class="trace">⚙ <b>${esc(c.tool)}</b> → served: ${esc(served)}${whHtml}</div>`;
+  }
+  $("trace").innerHTML = h;
+}
+
+// ---- right pane: governed output (updates in place) -------------------------
+function renderGov(data){
   const p = data.pane;
   let h = "";
   if (p.briefing) h += `<h3>Pre-call briefing</h3><pre class="brief">${esc(p.briefing)}</pre>`;
 
   const ov = Object.keys(p.overview || {});
   const tm = Object.keys(p.contract_terms || {});
-  if (ov.length || tm.length) {
-    h += `<h3>Served fields</h3><table class="kv">`;
-    for (const k of ov) h += `<tr><td class="k">${esc(k)}</td><td class="v">(served)</td></tr>`;
-    for (const k of tm) h += `<tr><td class="k">${esc(k)}</td><td class="v">${esc(JSON.stringify(p.contract_terms[k]))}</td></tr>`;
+  const wh = (p.withheld || []);
+  if (ov.length || tm.length || wh.length) {
+    h += `<h3>Served fields &amp; withheld names</h3><table class="kv">`;
+    for (const k of ov) h += `<tr><td class="k">${esc(k)}</td><td class="v">served</td></tr>`;
+    for (const k of tm) {
+      const val = p.contract_terms[k];
+      const shown = (typeof val === "object") ? JSON.stringify(val) : String(val);
+      h += `<tr><td class="k">${esc(k)}</td><td class="v">${esc(shown)}</td></tr>`;
+    }
+    for (const w of wh) h += `<tr class="whrow"><td class="k">${esc(w)}</td><td class="v">withheld at this access level</td></tr>`;
     h += `</table>`;
   }
   if ((p.notes || []).length) {
@@ -171,25 +276,14 @@ function renderPane(data){
     for (const n of p.notes) h += `<tr><td class="k">${esc(n.id||"")}</td><td class="v" style="font-weight:400;color:var(--ink)">${esc(n.text||"")}</td></tr>`;
     h += `</table>`;
   }
-  if ((p.withheld || []).length) {
-    h += `<h3>Withheld at your access level</h3><div>`;
-    for (const w of p.withheld) h += `<span class="wchip">${esc(w)}</span>`;
-    h += `</div>`;
-  }
-
-  // live tool-call trace (names only)
-  h += `<h3>Tool-call trace</h3>`;
-  for (const c of (data.tool_calls || [])) {
-    const served = (c.served || []).filter(x=>x!=null).join(", ") || "—";
-    const wh = (c.withheld || []).filter(Boolean);
-    const whHtml = wh.length ? ` · <span class="wh">withheld: ${esc(wh.join(", "))}</span>` : "";
-    h += `<div class="trace">⚙ <b>${esc(c.tool)}</b> → served: ${esc(served)}${whHtml}</div>`;
-  }
-
-  h += `<details><summary>raw JSON proof (no withheld values present)</summary>
+  h += `<details><summary>raw governed payload (proof: no withheld value present)</summary>
         <pre>${esc(JSON.stringify(data.proof, null, 2))}</pre></details>`;
-  $("gov").innerHTML = `<div class="gov">${h}</div>`;
+  $("gov").innerHTML = `<div class="gov">${h}</div>`;   // overwrite in place
 }
+
+// ---- send -------------------------------------------------------------------
+function add(html){ const d = document.createElement("div"); d.innerHTML = html;
+  $("log").appendChild(d.firstElementChild); $("log").scrollTop = $("log").scrollHeight; }
 
 async function send() {
   const brand = $("brand").value, role = $("role").value, message = $("msg").value.trim();
@@ -211,18 +305,11 @@ async function send() {
 
   if (data.error) { add(`<div class="msg err">${esc(data.error)}</div>`); return; }
 
-  // inline one-line trace per governed tool the model actually called this turn
-  for (const c of (data.tool_calls || [])) {
-    const served = (c.served || []).filter(x=>x!=null).join(", ") || "—";
-    const wh = (c.withheld || []).filter(Boolean);
-    const whHtml = wh.length ? ` · <span class="wh">withheld: ${esc(wh.join(", "))}</span>` : "";
-    add(`<div class="trace">⚙ called <b>${esc(c.tool)}</b> → served: ${esc(served)}${whHtml}</div>`);
-  }
-  // the model's spoken reply
+  // the model's spoken reply (chat stays clean; trace lives in the left pane)
   add(`<div class="msg bot"><div class="who">assistant · ${esc(data.bound.brand)}/${esc(data.bound.role)} (bound by selectors)</div>${esc(data.reply)}</div>`);
 
-  // right pane updates ONLY when a governed tool actually fired this turn
-  if (data.pulled) renderPane(data);
+  // a governed tool fired this turn -> update the LEFT trace and the RIGHT output in place
+  if (data.pulled) { renderTrace(data.tool_calls); renderGov(data); }
 }
 </script>
 </body>
