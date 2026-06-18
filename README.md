@@ -227,11 +227,21 @@ python -m evals.run                                                   # scored e
 pytest                                                                # 36 tests
 ```
 
-**Visual demo (optional):** a thin web face over the same governed backend —
-`pip install -r web/requirements.txt && python -m web.app`, then open
-<http://127.0.0.1:5055> for the deterministic brief + attack box (offline, no key), or
-`/chat` to talk to the real model-in-the-loop agent and watch it refuse to leak (needs
-`ANTHROPIC_API_KEY`). See [`web/README.md`](web/README.md).
+**Visual demo:** a thin web face over the same governed backend. From a fresh
+terminal:
+
+```bash
+cd access-control-layer
+source .venv/bin/activate
+python -m web.app
+```
+
+Then open <http://127.0.0.1:5055>. **`/` is the demo** — the two-pane surface:
+general chat on the left, governed data-pull on the right, watching the agent
+refuse to leak across brands. The API key loads automatically from `.env` (no
+manual `export` needed). Other routes: `/split` (alias of `/`), `/chat` (the
+single-pane model-in-the-loop chat), and `/brief` (the deterministic brief +
+attack box, offline, no key). See [`web/README.md`](web/README.md).
 
 The data in `Demo data/` is synthetic — fictional brands, numbers, and terms — so the
 project carries no real confidential data, which is the very thing the agent exists to

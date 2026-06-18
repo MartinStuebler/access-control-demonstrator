@@ -119,8 +119,10 @@ def _attack_evidence(principal: Principal, query: str, withheld_names: list[str]
     return evidence
 
 
-@app.get("/")
+@app.get("/brief")
 def index():
+    # The original single-pane brief surface. No longer the landing page —
+    # "/" now serves the two-pane split screen (see split_page below).
     return render_template("index.html", brands=_brands(), roles=VALID_ROLES)
 
 
@@ -413,8 +415,11 @@ def _pane_from_outputs(new_outputs: list[dict]) -> dict:
     }
 
 
+@app.get("/")
 @app.get("/split")
 def split_page():
+    # The two-pane general-chat + governed data-pull surface is the demo's
+    # landing page. Served at both "/" and "/split" (the latter kept as an alias).
     return render_template("split.html", brands=_brands(), roles=VALID_ROLES,
                            has_key=bool(os.getenv("ANTHROPIC_API_KEY")),
                            chat_model=CHAT_MODEL)
